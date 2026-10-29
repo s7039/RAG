@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# 环境变量（含密钥，禁止提交）
+.env
+.env.local
+
+# 向量库与索引元数据（可由 python scripts/ingest.py 重新生成）
+data/chroma/
+data/*.json
+
+# 日志与临时文件
+*.log
+tmp/
+temp/
+
+# IDE
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
