@@ -27,9 +27,10 @@
 - 硅基流动接入（2026-11-18）：chat `deepseek-ai/DeepSeek-V4.1-Flash` +
   embedding `Qwen/Qwen3-Embedding-8B`；规则 P95 5.7s、LLM 规划 P95 15.9s，质量仍 25/25、
   Top-1 15/15、拒答 3/3；修复 LLM 计划的上下文/改写/漏工具/due_at 四个问题。
-- Agent 总结 + 网页双模式（2026-11-19）：带 `create_task` 的问题由 LLM 基于工具结果总结，
-  纯检索题直接返回片段；`/api/agent/chat` 返回 sources/tool_calls/elapsed；网页默认 RAG、可切 Agent。
-  在线 P95 10.1s、平均 6.3s，质量仍 25/25、Top-1 15/15、拒答 3/3；pytest 36 个用例。
+- Agent 总结 + 网页双模式（2026-11-19）：有检索结果的问题由 LLM 基于工具结果总结；
+  只建待办、无检索片段时直接返回待办摘要；`/api/agent/chat` 返回 sources/tool_calls/elapsed；
+  网页默认 RAG、可切 Agent。在线 P95 8.5s、平均 7.0s，质量仍 25/25、Top-1 15/15、
+  拒答 3/3；pytest 36 个用例。
 
 ## 下一步
 
@@ -38,7 +39,7 @@
 3. 把无关的 `llama2.pdf` 移出 `input/`，重建索引后重跑评测。
 4. 延迟优化：Qwen3-Embedding-8B 单次 0.4–5s，可换 `BAAI/bge-m3`（实测 P95 299ms，Top-1 不变）。
 5. 会话记忆换 `PostgresSaver`；长期偏好写 `user_prefs`。
-6. Agent 回答改成流式（目前非流式，动作类问题要等 6–12s）。
+6. Agent 回答改成流式（目前非流式，每题要等 6–16s）。
 
 ## 常用命令
 

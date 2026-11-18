@@ -138,8 +138,8 @@ def test_service_follows_external_reingest(settings: Settings):
     assert first.bm25.size == first.store.count()
 
 
-def test_agent_synthesizes_only_for_action_questions(service: RagService):
-    """纯检索题省掉第二次 LLM 调用；带 create_task 的问题才让 LLM 汇总。"""
+def test_agent_synthesizes_all_search_answers(service: RagService):
+    """有检索结果就交给 LLM 汇总；带 create_task 时把已执行操作一并交给它。"""
     from langchain_core.messages import AIMessage
 
     from app.agent.graph import _synthesize
@@ -168,11 +168,11 @@ def test_agent_synthesizes_only_for_action_questions(service: RagService):
 
     state = {"messages": [{"role": "user", "content": "张三九的空腹血糖是多少？"}], "results": [search]}
     out = _synthesize(state, llm, service)
-    assert llm.calls == 0
-    assert "总结回答" not in out
-    assert source["content"] in out
+    assert llm.calls == 1
+    assert out == "总结回答 [1]。"
 
     state["results"] = [search, {"name": "create_task", "ok": True, "summary": "已创建待办 #1：复查"}]
     out = _synthesize(state, llm, service)
-    assert llm.calls == 1
+    assert llm.calls == 2
     assert "总结回答" in out
+    assert "已创建待办 #1：复查" in out

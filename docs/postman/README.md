@@ -34,5 +34,5 @@ npx newman run docs/postman/rag-api.postman_collection.json ^
 ```
 
 最近一次结果（2026-11-19，硅基流动 embedding + LLM 规划，58 chunk）：
-`requests 8 / failed 0`，`assertions 4 / failed 0`，平均响应 1.0s
-（max 4.7s，Agent 那条；`/api/query` 走 mock 约 0.2–4s）。
+`requests 8 / failed 0`，`assertions 4 / failed 0`，平均响应 1.1s
+（max 7.4s，Agent 那条；`/api/query` 走 mock 约 0.2–4s）。

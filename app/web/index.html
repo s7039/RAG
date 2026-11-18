@@ -198,7 +198,7 @@
       <label class="field"><span>问答模式</span>
         <select id="mode">
           <option value="rag" selected>普通 RAG：流式回答</option>
-          <option value="agent">Agent：工具调用（建待办时用 LLM 汇总）</option>
+          <option value="agent">Agent：工具调用 + LLM 汇总</option>
         </select>
       </label>
       <div class="doc-meta" id="mode-hint" style="margin:-2px 0 10px">普通 RAG 按下方供应商 / top_k 检索并流式生成</div>
@@ -529,7 +529,7 @@ async function sendRag(question, el) {
 
 async function sendAgent(question, el) {
   const answerBox = el.querySelector(".answer");
-  answerBox.innerHTML = `<p class="doc-meta">Agent 正在规划工具…</p>`;
+  answerBox.innerHTML = `<p class="doc-meta">Agent 正在规划工具并汇总回答…</p>`;
 
   const res = await fetch("/api/agent/chat", {
     method: "POST",
@@ -584,7 +584,7 @@ $("#topk").addEventListener("input", (e) => ($("#topk-val").textContent = e.targ
 $("#provider").addEventListener("change", updateModels);
 $("#mode").addEventListener("change", (e) => {
   $("#mode-hint").textContent = e.target.value === "agent"
-    ? "Agent 忽略供应商 / top_k；建待办时用 LLM 汇总，纯检索返回片段"
+    ? "Agent 忽略供应商 / top_k；检索结果由 LLM 汇总"
     : "普通 RAG 按下方供应商 / top_k 检索并流式生成";
 });
 

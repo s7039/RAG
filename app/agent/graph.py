@@ -151,9 +151,6 @@ def _synthesize(state: AgentState, llm, service) -> str:
             actions.append(r.get("summary") or "已创建待办")
     if not sources or llm is None:
         return _compose(state, service)
-    if not any(r.get("name") == "create_task" for r in results):
-        # 纯检索题没有“动作”要汇报，直接片段拼接，省一次 LLM 调用
-        return _compose(state, service)
 
     question = _last_text(state)
     if actions:
