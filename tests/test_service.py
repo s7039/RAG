@@ -103,3 +103,24 @@ def test_append_mode_keeps_existing_vectors(settings: Settings):
     second = svc.ingest(reset=False)
     # upsert 使用稳定 id，重复灌入不会产生重复向量
     assert svc.store.count() == first.chunks == second.chunks
+
+
+def test_service_follows_external_reingest(settings: Settings):
+    """另一个进程（例如容器里的 ingest 脚本）重建集合后，运行中的服务要自动跟上。
+
+    回归：以前缓存了 Collection 句柄，对方 reset() 后本进程 health 恒为 0、query 报 500。
+    """
+    first = RagService(settings)
+    chunks = first.ingest(reset=True).chunks
+    assert first.ask("张三九的空腹血糖是多少？").answer
+
+    # 换成一份只有张三九的档案，模拟另一个进程 reset + 重新灌库
+    record = Path(settings.input_dir) / "健康档案.txt"
+    record.write_text(RECORD.rsplit("健康档案", 1)[0], encoding="utf-8")
+    second = RagService(settings)
+    fewer = second.ingest(reset=True).chunks
+    assert fewer < chunks
+
+    assert first.store.count() == fewer
+    assert first.ask("张三九的空腹血糖是多少？").answer
+    assert first.bm25.size == first.store.count()

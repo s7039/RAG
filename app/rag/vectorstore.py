@@ -63,7 +63,6 @@ class VectorStore:
         self.persist_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._client = None
-        self._collection = None
 
     # ------------------------------------------------------------ 基础
     @property
@@ -80,13 +79,13 @@ class VectorStore:
 
     @property
     def collection(self):
-        if self._collection is None:
-            self._collection = self.client.get_or_create_collection(
-                name=self.collection_name,
-                metadata={"hnsw:space": "cosine"},
-                embedding_function=None,
-            )
-        return self._collection
+        # 不缓存句柄：别的进程（例如容器里的 ingest 脚本）reset() 会删掉并重建同名集合，
+        # 旧句柄随之失效（NotFoundError）。每次取当前集合，代价约 0.2ms。
+        return self.client.get_or_create_collection(
+            name=self.collection_name,
+            metadata={"hnsw:space": "cosine"},
+            embedding_function=None,
+        )
 
     def count(self) -> int:
         try:
@@ -101,7 +100,6 @@ class VectorStore:
                 self.client.delete_collection(self.collection_name)
             except Exception:
                 pass
-            self._collection = None
             _ = self.collection
 
     # ------------------------------------------------------------ 写入

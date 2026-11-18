@@ -98,14 +98,16 @@ class RagService:
         self._keyword_index_ready = False
 
     def _ensure_keyword_index(self) -> None:
-        """按需构建 BM25 索引（进程重启后第一次检索时构建）。"""
-        if self._keyword_index_ready:
+        """按需构建 BM25 索引（进程重启后第一次检索时构建）。
+
+        集合被别的进程重建过时，内存里的关键词索引也要跟着重建，否则会一直用旧快照。
+        """
+        count = self.store.count()
+        if self._keyword_index_ready and self.bm25.size == count:
             return
-        if self.store.count() == 0:
-            self._keyword_index_ready = True
-            return
-        rows = self.store.all_rows()
-        self.bm25.build(rows)
+        self.bm25.clear()
+        if count:
+            self.bm25.build(self.store.all_rows())
         self._keyword_index_ready = True
 
     def rebuild_keyword_index(self) -> int:
