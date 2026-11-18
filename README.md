@@ -87,6 +87,11 @@ RAG/
 │  └─ query.py                # 命令行问答
 ├─ db/
 │  └─ init.sql                # PostgreSQL 建表（documents/chunks/tasks/sessions/messages/user_prefs）
+├─ evals/
+│  ├─ cases.yaml              # 25 条评测集
+│  ├─ runner.py               # 跑评测，产出 report.json
+│  ├─ report.json             # 最近一次结果
+│  └─ REPORT.md               # 指标 + Bad Case 归因
 ├─ tests/                     # pytest 测试（27 个用例，含 5 个 Agent 场景）
 ├─ input/                     # 健康档案语料（PDF）
 ├─ data/chroma/               # 向量库落盘目录（可重建，已在 .gitignore）
@@ -432,7 +437,31 @@ HTTP 接口（含 SSE 流式）、空库提问，以及 Agent 的 5 个场景（
 
 ---
 
-## 十、常见问题
+## 十、评测体系
+
+`evals/` 下 25 条用例：单轮精确 10 / 多轮指代 5 / 工具组合 5 / 拒答 3 / 参数校验 2。
+`python -m evals.runner` 离线跑完约 1 秒，产出 `evals/report.json`（含每条用例的工具计划、
+引用出处、回答和耗时）。
+
+| 指标 | 当前值 |
+| --- | --- |
+| 任务完成率（人工） | 23/25 |
+| 工具选择准确率 | 23/23 |
+| 参数正确率 | 25/25 |
+| Top-1 / Top-4 引用命中 | 13/15 · 15/15 |
+| 拒答正确率 | 2/3 |
+| P95 延迟 | 11.5 ms（离线检索 + 规则规划，不调 LLM） |
+
+Bad Case 归因（r03 该拒答却硬答、s07 Top-1 排序错误、s01 语料自相矛盾）见
+[evals/REPORT.md](evals/REPORT.md)。CI 里会执行同一套用例，工具准确率低于 0.8 直接失败。
+
+---
+
+## 十一、常见问题
+
+**Q：没有起 PostgreSQL 时 Agent 还能用吗？**
+A：能。检索、多轮、拒答不依赖数据库；`create_task` 会返回「待办库不可用」，
+会话日志写入失败也只记一条 warning。`pytest` 里建待办那条用例会自动 skip。
 
 **Q：没有 API Key 时界面显示「离线模拟模式」，回答是拼凑的？**
 A：是的。离线模拟模型只从检索结果中抽取最相关的句子，用来验证链路。
@@ -456,18 +485,19 @@ A：`python run.py --port 8080`。
 
 ---
 
-## 十一、可扩展方向
+## 十二、可扩展方向
 
-- 接入 Rerank 模型（如 bge-reranker）做二次精排
-- 增加会话记忆，支持多轮追问
+- 接入真实 embedding / Rerank（如 bge-reranker），把评测 Top-1 从 13/15 提到 15/15
+- 修语料里的患者归属冲突（`健康档案(含表格01/02).pdf` 混入王五数据），见评测报告
+- 给 Agent 的回答加相关性门槛，补齐库外问题拒答
+- 会话记忆升级：`PostgresSaver` 替代进程内 `MemorySaver`，长期偏好写 `user_prefs`
 - 文档增量更新（按文件哈希判断是否需要重新向量化）
 - 扫描件 OCR、结构化表格入库
-- 接入 LangGraph / Agent，做多步检索与工具调用
 - 权限控制：不同用户只能检索自己的健康档案
 
 ---
 
-## 十二、参考
+## 十三、参考
 
 - LangChain：<https://python.langchain.com/>
 - FastAPI：<https://fastapi.tiangolo.com/>

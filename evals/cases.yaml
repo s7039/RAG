@@ -1,0 +1,221 @@
+# 25 条评测集：单轮精确 10 / 多轮指代 5 / 工具组合 5 / 拒答 3 / 参数错误 2
+# expect_source 写的是语料里的真实出处（不是从检索结果倒推出来的）
+# kind: qa = 走 Agent 端到端；validation = 直接校验工具入参
+
+- id: s01
+  kind: qa
+  question: 张三九对什么药物过敏？
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 1}
+  patient: 张三九
+  difficulty: easy
+  note: 答案青霉素，见「二、医疗历史」
+
+- id: s02
+  kind: qa
+  question: 张三九的血型是什么？
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 1}
+  patient: 张三九
+  difficulty: easy
+  note: 答案 O 型，见「一、基本信息」
+
+- id: s03
+  kind: qa
+  question: 李四六对阿司匹林过敏吗？
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 2}
+  patient: 李四六
+  difficulty: easy
+  note: 是，见「二、医疗历史」
+
+- id: s04
+  kind: qa
+  question: 李四六对哪些食物过敏？
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 2}
+  patient: 李四六
+  difficulty: easy
+  note: 坚果，见「二、医疗历史」
+
+- id: s05
+  kind: qa
+  question: 王五做过什么手术？
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 4}
+  patient: 王五
+  difficulty: easy
+  note: 2010 年阑尾切除术
+
+- id: s06
+  kind: qa
+  question: 王五对什么药物过敏？
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 4}
+  patient: 王五
+  difficulty: easy
+  note: 头孢类抗生素
+
+- id: s07
+  kind: qa
+  question: 李四六的空腹血糖是多少？
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 3}
+  patient: 李四六
+  difficulty: easy
+  note: 5.2 毫摩尔/升；Top-1 被「医生建议」抢走
+
+- id: s08
+  kind: qa
+  question: 王五的空腹血糖是多少？
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 5}
+  patient: 王五
+  difficulty: easy
+  note: 5.5 毫摩尔/升
+
+- id: s09
+  kind: qa
+  question: 张三九的长期目标里空腹血糖要控制在多少以下？
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 2}
+  patient: 张三九
+  difficulty: easy
+  note: 6.0 毫摩尔/升，见「七、长期目标」
+
+- id: s10
+  kind: qa
+  question: 李四六最近一次体检是什么时候？
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 3}
+  patient: 李四六
+  difficulty: easy
+  note: 2024 年 7 月 20 日
+
+- id: m01
+  kind: qa
+  turns: [张三九的空腹血糖是多少？]
+  question: 那他的饮食建议是什么
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 2}
+  patient: 张三九
+  difficulty: normal
+  note: 多轮指代「他」，需要沿用上一轮患者
+
+- id: m02
+  kind: qa
+  turns: [李四六对什么药物过敏？]
+  question: 那她平时运动多吗
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 3}
+  patient: 李四六
+  difficulty: normal
+  note: 多轮指代「她」
+
+- id: m03
+  kind: qa
+  turns: [王五的体检结果怎么样？]
+  question: 他的 BMI 是多少
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 5}
+  patient: 王五
+  difficulty: normal
+  note: 多轮 + 英文缩写
+
+- id: m04
+  kind: qa
+  turns: [张三九有哪些既往病史？]
+  question: 那他的家族病史呢
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 1}
+  patient: 张三九
+  difficulty: normal
+  note: 多轮指代「他」
+
+- id: m05
+  kind: qa
+  turns: [李四六的胆固醇高吗？]
+  question: 那医生给了什么建议
+  expect_tools: [search_knowledge]
+  expect_source: {file: 健康档案.pdf, page: 4}
+  patient: 李四六
+  difficulty: normal
+  note: 多轮省略主语
+
+- id: t01
+  kind: qa
+  question: 明天下午三点提醒我复查血糖
+  expect_tools: [parse_time, create_task]
+  difficulty: normal
+  note: 时间解析 + 建待办
+
+- id: t02
+  kind: qa
+  question: 后天上午十点提醒我吃降压药
+  expect_tools: [parse_time, create_task]
+  difficulty: normal
+  note: 中文时间 + 上午
+
+- id: t03
+  kind: qa
+  question: 帮我查一下李四六对哪些药物过敏，然后明天下午三点提醒我复查
+  expect_tools: [search_knowledge, parse_time, create_task]
+  patient: 李四六
+  difficulty: normal
+  note: 工具组合，先查再记
+
+- id: t04
+  kind: qa
+  question: 张三九的空腹血糖是多少？记得到时候提醒我复查
+  expect_tools: [search_knowledge, parse_time, create_task]
+  patient: 张三九
+  difficulty: normal
+  note: 工具组合，检索 + 提醒
+
+- id: t05
+  kind: qa
+  question: 下周记得帮我预约体检
+  expect_tools: [parse_time, create_task]
+  difficulty: normal
+  note: 只有待办意图
+
+- id: r01
+  kind: qa
+  question: 今天杭州天气怎么样
+  expect_tools: []
+  expect_refusal: true
+  difficulty: hard
+  note: 完全库外，应明确拒答
+
+- id: r02
+  kind: qa
+  question: 帮我查一下明天上海的股票行情
+  expect_tools: []
+  expect_refusal: true
+  difficulty: hard
+  note: 完全库外，应明确拒答
+
+- id: r03
+  kind: qa
+  question: 张三九的 MRI 报告在哪一页
+  expect_tools: [search_knowledge]
+  expect_refusal: true
+  patient: 张三九
+  difficulty: hard
+  note: 库内有该患者但无 MRI；当前会被检索「蒙混过关」，见 REPORT.md
+
+- id: v01
+  kind: validation
+  tool: search_knowledge
+  args: {query: x, top_k: 999}
+  expect_error: 参数不合法
+  difficulty: normal
+  note: top_k 超出 1-10
+
+- id: v02
+  kind: validation
+  tool: create_task
+  args: {title: ""}
+  expect_error: 参数不合法
+  difficulty: normal
+  note: title 为空
