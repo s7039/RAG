@@ -136,3 +136,43 @@ def test_service_follows_external_reingest(settings: Settings):
     assert first.store.count() == fewer
     assert first.ask("张三九的空腹血糖是多少？").answer
     assert first.bm25.size == first.store.count()
+
+
+def test_agent_synthesizes_only_for_action_questions(service: RagService):
+    """纯检索题省掉第二次 LLM 调用；带 create_task 的问题才让 LLM 汇总。"""
+    from langchain_core.messages import AIMessage
+
+    from app.agent.graph import _synthesize
+
+    class FakeLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def invoke(self, messages):
+            self.calls += 1
+            return AIMessage(content="总结回答 [1]。")
+
+    source = {
+        "content": "张三九的空腹血糖为6.8毫摩尔/升。",
+        "metadata": {},
+        "score": 0.9,
+        "rank": 1,
+        "source": "健康档案.pdf",
+        "page": 1,
+        "section": "四、体检与化验结果",
+        "patient": "张三九",
+        "chunk_id": "c1",
+    }
+    search = {"name": "search_knowledge", "ok": True, "sources": [source]}
+    llm = FakeLLM()
+
+    state = {"messages": [{"role": "user", "content": "张三九的空腹血糖是多少？"}], "results": [search]}
+    out = _synthesize(state, llm, service)
+    assert llm.calls == 0
+    assert "总结回答" not in out
+    assert source["content"] in out
+
+    state["results"] = [search, {"name": "create_task", "ok": True, "summary": "已创建待办 #1：复查"}]
+    out = _synthesize(state, llm, service)
+    assert llm.calls == 1
+    assert "总结回答" in out

@@ -14,9 +14,10 @@
   工具失败重规划一次；`MemorySaver` 保存多轮状态。
 - **存储**：Chroma 存向量与正文；PostgreSQL 存 chunk 元数据、待办、会话/消息。
 - **评测**：`evals/cases.yaml` 25 条，离线可跑；CI 门槛为工具准确率 ≥ 0.8。
-- **接口**：FastAPI `/api/*`；Postman 集合在 `docs/postman/`（query 走 mock，4 断言）。
+- **接口**：FastAPI `/api/*`；Postman 集合在 `docs/postman/`（query 走 mock，4 断言）；
+  网页有「普通 RAG / Agent」双模式，默认 RAG。
 
-## 当前进度（2026-11-18）
+## 当前进度（2026-11-19）
 
 - Phase 2 PostgreSQL：完成，tag `v0.1.1-pg`（58 chunk / 4 documents）。
 - Phase 3 LangGraph Agent：完成，tag `v0.2-agent`（5 个端到端场景）。
@@ -25,7 +26,10 @@
 - 回归修复：语料患者补丁、相关性拒答、规则 rerank；无 Key 基线 25/25、Top-1 15/15、拒答 3/3。
 - 硅基流动接入（2026-11-18）：chat `deepseek-ai/DeepSeek-V4.1-Flash` +
   embedding `Qwen/Qwen3-Embedding-8B`；规则 P95 5.7s、LLM 规划 P95 15.9s，质量仍 25/25、
-  Top-1 15/15、拒答 3/3；修复 LLM 计划的上下文/改写/漏工具/due_at 四个问题；pytest 35 个用例。
+  Top-1 15/15、拒答 3/3；修复 LLM 计划的上下文/改写/漏工具/due_at 四个问题。
+- Agent 总结 + 网页双模式（2026-11-19）：带 `create_task` 的问题由 LLM 基于工具结果总结，
+  纯检索题直接返回片段；`/api/agent/chat` 返回 sources/tool_calls/elapsed；网页默认 RAG、可切 Agent。
+  在线 P95 10.1s、平均 6.3s，质量仍 25/25、Top-1 15/15、拒答 3/3；pytest 36 个用例。
 
 ## 下一步
 
@@ -34,11 +38,12 @@
 3. 把无关的 `llama2.pdf` 移出 `input/`，重建索引后重跑评测。
 4. 延迟优化：Qwen3-Embedding-8B 单次 0.4–5s，可换 `BAAI/bge-m3`（实测 P95 299ms，Top-1 不变）。
 5. 会话记忆换 `PostgresSaver`；长期偏好写 `user_prefs`。
+6. Agent 回答改成流式（目前非流式，动作类问题要等 6–12s）。
 
 ## 常用命令
 
 ```bash
-python -m pytest                                           # 35 个用例
+python -m pytest                                           # 36 个用例
 python scripts/ingest.py                                   # 灌库（58 chunk）
 docker compose up -d db                                    # PostgreSQL
 python scripts/migrate_to_pg.py                            # Chroma -> PG

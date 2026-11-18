@@ -12,7 +12,13 @@ from sqlalchemy.orm import sessionmaker
 from app.config import get_settings
 
 _settings = get_settings()
-engine = create_engine(_settings.postgres_dsn, pool_pre_ping=True, future=True)
+engine = create_engine(
+    _settings.postgres_dsn,
+    pool_pre_ping=True,
+    future=True,
+    # 本地没起 db 时不要无限等：连接 3s 超时，Agent 会话日志直接降级
+    connect_args={"connect_timeout": 3},
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 

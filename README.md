@@ -93,7 +93,7 @@ RAG/
 │  ├─ runner.py               # 跑评测，产出 report.json
 │  ├─ report.json             # 最近一次结果
 │  └─ REPORT.md               # 指标 + Bad Case 归因
-├─ tests/                     # pytest 测试（35 个用例，含 9 个 Agent 场景）
+├─ tests/                     # pytest 测试（36 个用例，含 9 个 Agent 场景）
 ├─ docs/postman/              # Postman 集合（8 请求 + 4 条断言）
 ├─ input/                     # 健康档案语料（PDF）
 ├─ data/chroma/               # 向量库落盘目录（可重建，已在 .gitignore）
@@ -416,10 +416,15 @@ graph TD;
   直接回「没查到」，不让无关片段硬答。
 - **多轮指代**：LangGraph `MemorySaver` 按 `thread_id` 保存 state，追问「那他的饮食建议呢」会沿用上一轮的患者。
 - **会话落库**：每轮问答写入 PostgreSQL 的 `sessions` / `messages`（`tool_calls` 存 JSONB），进程重启后仍可查。
+- **最终回答**：纯检索题直接返回带 `[1]` 引用的片段，省一次 LLM 调用；只有带 `create_task` 的“动作类”
+  问题才让 LLM 基于检索结果 + 已执行操作写总结（否则模型容易说“无法设置提醒”）。
+- **网页双模式**：`app/web/index.html` 的「问答模式」默认普通 RAG（流式），可切 Agent；
+  Agent 模式会显示工具链和耗时。
 - **离线可测**：没有 API Key 时用离线模拟模型作答，9 个 Agent 用例（检索 / 建待办 / 多轮 / 参数校验 /
-  库外拒答 / 库内无此项 / 计划校验 / 中文时间）全过。
+  库外拒答 / 库内无此项 / 计划校验 / 中文时间）全过；总测试数 36。
 
-> 配了真实 LLM 后 Agent 单轮约 5–16 s（规划调用 DeepSeek），无 Key 走规则约 10 ms 级；
+> 配了真实 LLM 后：普通 RAG 约 2–8 s；Agent 纯检索约 4–8 s（一次规划），建待办约 6–12 s
+> （规划 + 汇总）。无 Key 走规则 + 片段拼接，毫秒级。
 > 评测里两种模式都记录在 [evals/REPORT.md](evals/REPORT.md)。
 
 ```bash
@@ -431,11 +436,13 @@ curl -X POST http://127.0.0.1:8000/api/agent/chat ^
 ```json
 {
   "thread_id": "…",
-  "answer": "· 已创建待办 #6：复查血糖（2026-11-19T15:00:00）",
+  "answer": "· 已创建待办 #6：复查血糖（2026-11-20T15:00:00）",
   "tool_calls": [
-    {"name": "parse_time", "args": {"text": "明天下午三点提醒我复查血糖"}},
-    {"name": "create_task", "args": {"title": "复查血糖"}}
-  ]
+    {"name": "parse_time", "args": {"text": "明天下午三点提醒我复查血糖"}, "ok": true, "summary": "2026-11-20T15:00:00"},
+    {"name": "create_task", "args": {"title": "复查血糖"}, "ok": true, "summary": "已创建待办 #6：复查血糖（2026-11-20T15:00:00）"}
+  ],
+  "sources": [],
+  "elapsed_ms": 5710.2
 }
 ```
 
@@ -474,8 +481,9 @@ python -m pytest -v
 
 覆盖：切分与患者识别、表格保护、页码回溯、语料患者补丁、BM25 排序与过滤、端到端入库检索、
 轻量 rerank、HTTP 接口（含 SSE 流式）、空库提问，以及 Agent 的 9 个用例（检索 / 建待办 /
-多轮指代 / 参数校验 / 库外拒答 / 库内无此项 / 计划纠偏 / 中文时间）。全部用例使用本地向量 +
-离线模拟模型，**不需要网络和 API Key**；建待办那条需要本地 `db` 容器，没起 PostgreSQL 时会 skip。
+多轮指代 / 参数校验 / 库外拒答 / 库内无此项 / 计划纠偏 / 中文时间）。总 36 个用例，全部使用
+本地向量 + 离线模拟模型，**不需要网络和 API Key**；建待办那条需要本地 `db` 容器，
+没起 PostgreSQL 时会 skip。
 
 > 测试 fixture 会显式清空 `CUSTOM_* / OPENAI / DEEPSEEK` 配置，避免本机 `.env` 里的真实 Key
 > 被测试偷偷调用。
@@ -496,7 +504,10 @@ python -m evals.runner --online --out report.online.json
 | --- | --- | --- | --- | --- |
 | 无 Key：本地哈希 + 规则 | 23/23 · 25/25 | 15/15 · 15/15 | 3/3 | 12.3 ms |
 | 硅基流动 Qwen3-8B + 规则 | 23/23 · 25/25 | 15/15 · 15/15 | 3/3 | 5.7 s |
-| 硅基流动 Qwen3-8B + LLM 规划 | 23/23 · 25/25 | 15/15 · 15/15 | 3/3 | 15.9 s |
+| 硅基流动 Qwen3-8B + LLM 规划 | 23/23 · 25/25 | 15/15 · 15/15 | 3/3 | 10.1 s |
+
+> 在线模式里只有带 `create_task` 的动作类问题会多调一次 LLM 写总结，纯检索题直接返回片段；
+> 所以 P95 从“每题都总结”的 15.9s 降到 10.1s（平均 6.3s）。
 
 修复前后的对比、3 个 Bad Case 的归因（r03 该拒答却硬答、s07/m01 Top-1 排序错误、
 s01 语料自相矛盾）、接入真实模型时修掉的 5 个问题，见 [evals/REPORT.md](evals/REPORT.md)。

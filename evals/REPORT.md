@@ -1,8 +1,8 @@
 # 评测报告（硅基流动接入 + 回归修复）
 
-- 日期：2026-11-18
+- 日期：2026-11-19
 - 环境：Windows 11 / Python 3.13.2
-- 在线模型：硅基流动 `deepseek-ai/DeepSeek-V4.1-Flash`（规划）+ `Qwen/Qwen3-Embedding-8B`（4096 维）
+- 在线模型：硅基流动 `deepseek-ai/DeepSeek-V4.1-Flash`（规划 + 动作类总结）+ `Qwen/Qwen3-Embedding-8B`（4096 维）
 - 离线兜底：本地哈希向量（1024 维）+ 规则规划器，无 Key 可复现
 - 语料：`input/` 4 个 PDF → 15 页 → 58 chunk（健康档案 31 个，llama2.pdf 27 个）
 - 数据集：25 条（单轮精确 10 / 多轮指代 5 / 工具组合 5 / 拒答 3 / 参数校验 2）
@@ -30,12 +30,14 @@
 | --- | --- | --- | --- | --- | --- |
 | 无 Key：本地哈希 + 规则（历史基线） | 23/23 · 25/25 | 15/15 · 15/15 | 3/3 | 12.3 ms | 41.9 ms |
 | 硅基流动 Qwen3-8B + 规则（`report.json`） | 23/23 · 25/25 | 15/15 · 15/15 | 3/3 | 5.7 s | 2.2 s |
-| 硅基流动 Qwen3-8B + LLM 规划（`report.online.json`） | 23/23 · 25/25 | 15/15 · 15/15 | 3/3 | 15.9 s | 7.7 s |
+| 硅基流动 Qwen3-8B + LLM 规划（动作类才总结，`report.online.json`） | 23/23 · 25/25 | 15/15 · 15/15 | 3/3 | 10.1 s | 6.3 s |
 
-> 延迟差异主要来自远程 `embed_query`（Qwen3-Embedding-8B 单次 0.4–5 s，波动大）和 LLM 规划
+> 延迟差异主要来自远程 `embed_query`（Qwen3-Embedding-8B 单次 0.4–5 s，波动大）和 LLM 调用
 > （DeepSeek-V4.1-Flash 单次 1–11 s）。无 Key 的 12.3 ms 是本地计算，不能和在线数字直接比。
-> 同样 25 条用例、只换 embedding 模型为 `BAAI/bge-m3`（1024 维）时：规则 P95 299 ms、
-> LLM 规划 P95 10.7 s，Top-1 仍是 15/15。当前按你的选择保留 Qwen。
+> 在线模式只有带 `create_task` 的动作类问题会多调一次 LLM 写总结，纯检索题直接返回片段；
+> 这使 P95 从“每题都总结”的 15.9 s 降到 10.1 s。
+> 只换 embedding 为 `BAAI/bge-m3`（1024 维）时，规则规划 P95 299 ms、Top-1 仍是 15/15；
+> 当前按你的选择保留 Qwen。
 
 ### 修复前后（无 Key 基线）
 
@@ -97,7 +99,20 @@
 - **现象**：测试 fixture 只清空了 `OPENAI/DEEPSEEK`，没有清 `CUSTOM_*`，
   `/api/query` 走了真实模型，`test_ingest_then_query` 断言 `mode == "mock"` 失败，整套 41 s。
 - **修复**：测试 fixture 显式清空 `CUSTOM_*`、`DEFAULT_PROVIDER=deepseek`、`DEFAULT_MODEL=`；
-  现在 35 个用例 4.6 s 跑完，不联网。
+  现在 36 个用例 4.95 s 跑完，不联网。
+
+### 6. Agent 只会拼片段、网页用不到工具
+
+- **现象**：Agent 配了 Key 也只做工具规划，最终回答仍是 `[1] 原文…`；网页调 `/api/query/stream`，
+  完全没有走 Agent。
+- **修复**：
+  - `_synthesize` 在工具结果上再调一次 LLM 写总结；只有带 `create_task` 的动作类问题才总结，
+    纯检索题直接返回片段，省一次调用（P95 15.9 s → 10.1 s）。
+  - 总结 prompt 带「系统已执行的操作」，避免模型一边建了待办一边说“无法设置提醒”。
+  - `/api/agent/chat` 返回 `sources / tool_calls[].ok / elapsed_ms`。
+  - 网页加「问答模式」：默认普通 RAG（流式），可切 Agent；Agent 显示工具链和耗时。
+- **验证**：t03（检索 + 建待办）的回答包含过敏结论和“已创建待办 #N + 时间”，不再自相矛盾；
+  网页 Agent 模式显示 `parse_time → create_task` 和耗时；36 个测试通过。
 
 ## 五、Bad Case（已修复）
 

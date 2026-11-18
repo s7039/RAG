@@ -17,6 +17,8 @@ from app.agent.tools import (
     resolve_patient,
     run_tool,
 )
+from app.rag.prompt import build_messages
+from app.rag.retriever import RetrievedChunk
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +111,86 @@ def _cite(source: dict) -> str:
     if source.get("page"):
         where += f" 第{source['page']}页"
     return f"（{where}）" if where else ""
+
+
+def _chunks_from_sources(sources: list[dict]) -> list[RetrievedChunk]:
+    """把工具返回的 source dict 还原成 prompt 需要的 RetrievedChunk。"""
+    return [
+        RetrievedChunk(
+            content=src.get("content", ""),
+            metadata=src.get("metadata") or {},
+            score=float(src.get("score") or 0.0),
+            rank=int(src.get("rank") or i + 1),
+            source=src.get("source", ""),
+            page=src.get("page"),
+            page_end=src.get("page_end"),
+            section=src.get("section", ""),
+            patient=src.get("patient", ""),
+            chunk_id=src.get("chunk_id", ""),
+        )
+        for i, src in enumerate(sources)
+    ]
+
+
+def _synthesize(state: AgentState, llm, service) -> str:
+    """有真实 LLM 时基于工具结果写回答；没有/调用失败则回退片段拼接。"""
+    results = state.get("results") or []
+    sources = [
+        src
+        for r in results
+        if r.get("name") == "search_knowledge" and r.get("ok")
+        for src in r.get("sources") or []
+    ]
+    actions: list[str] = []
+    for r in results:
+        if r.get("name") == "search_knowledge":
+            continue
+        if not r.get("ok"):
+            actions.append(f"{r.get('name')} 未完成：{r.get('error')}")
+        elif r.get("name") == "create_task":
+            actions.append(r.get("summary") or "已创建待办")
+    if not sources or llm is None:
+        return _compose(state, service)
+    if not any(r.get("name") == "create_task" for r in results):
+        # 纯检索题没有“动作”要汇报，直接片段拼接，省一次 LLM 调用
+        return _compose(state, service)
+
+    question = _last_text(state)
+    if actions:
+        question += (
+            "\n\n【系统已执行的操作（已完成，不是建议）】\n"
+            + "\n".join(f"- {a}" for a in actions)
+            + "\n请在回答中如实告知用户这些操作已完成；不要说无法设置提醒，也不要建议用户自行设置；"
+            "操作已成功时直接确认结果，不要再反问时间是否正确。"
+        )
+
+    try:
+        messages = build_messages(
+            question,
+            _chunks_from_sources(sources),
+            service.settings.max_context_chars,
+        )
+        out = llm.invoke(messages)
+        text = out.content if hasattr(out, "content") else str(out)
+        answer = str(text).strip()
+    except Exception as exc:  # noqa: BLE001 - 总结失败不能影响工具结果
+        log.warning("Agent 总结失败（%s），回退片段拼接", exc.__class__.__name__)
+        return _compose(state, service)
+
+    if not answer:
+        return _compose(state, service)
+
+    # 模型偶尔漏说已执行的操作，这里补一句兜底（已说则不重复）
+    def _missing(action: str) -> bool:
+        if action in answer:
+            return False
+        if action.startswith("已创建待办"):
+            # 模型用自己的话说了「已创建待办 #N / 提醒已设置」就不重复
+            return not (("待办" in answer or "提醒" in answer) and "无法" not in answer)
+        return True
+
+    missing = [a for a in actions if _missing(a)]
+    return "\n\n".join([answer, *(f"· {a}" for a in missing)]) if missing else answer
 
 
 def _compose(state: AgentState, service) -> str:
@@ -207,7 +289,7 @@ def build_graph(service, llm=None, checkpointer=None):
         return {}
 
     def final(state: AgentState) -> dict:
-        answer = _compose(state, service)
+        answer = _synthesize(state, llm, service)
         return {"final": answer, "messages": [{"role": "assistant", "content": answer}]}
 
     def after_route(state: AgentState) -> str:

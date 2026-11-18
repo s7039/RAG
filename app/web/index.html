@@ -195,6 +195,13 @@
 
     <div>
       <h3 class="card-title">检索 / 生成参数</h3>
+      <label class="field"><span>问答模式</span>
+        <select id="mode">
+          <option value="rag" selected>普通 RAG：流式回答</option>
+          <option value="agent">Agent：工具调用（建待办时用 LLM 汇总）</option>
+        </select>
+      </label>
+      <div class="doc-meta" id="mode-hint" style="margin:-2px 0 10px">普通 RAG 按下方供应商 / top_k 检索并流式生成</div>
       <label class="field"><span>大模型供应商</span>
         <select id="provider"></select>
       </label>
@@ -244,7 +251,7 @@
 
 <script>
 const $ = (sel) => document.querySelector(sel);
-const state = { providers: [], docs: [], busy: false };
+const state = { providers: [], docs: [], busy: false, threadId: null };
 
 function esc(text) {
   return String(text ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -444,9 +451,21 @@ async function send(question) {
   addUserMessage(question);
 
   const el = addBotShell();
+  try {
+    if ($("#mode").value === "agent") await sendAgent(question, el);
+    else await sendRag(question, el);
+  } catch (err) {
+    el.querySelector(".answer").innerHTML = `<p style="color:#b91c1c">请求失败：${esc(err.message)}</p>`;
+  } finally {
+    state.busy = false;
+    $("#send").disabled = false;
+    scrollBottom();
+  }
+}
+
+async function sendRag(question, el) {
   const answerBox = el.querySelector(".answer");
   let text = "";
-  let meta = null;
 
   const payload = {
     question,
@@ -461,60 +480,77 @@ async function send(question) {
   const patient = $("#patient").value;
   if (patient) payload.patient = patient;
 
-  try {
-    const res = await fetch("/api/query/stream", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+  const res = await fetch("/api/query/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let buffer = "";
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
 
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const parts = buffer.split("\n\n");
-      buffer = parts.pop();
-      for (const part of parts) {
-        if (!part.trim()) continue;
-        let event = "message", data = "";
-        for (const line of part.split("\n")) {
-          if (line.startsWith("event:")) event = line.slice(6).trim();
-          else if (line.startsWith("data:")) data += line.slice(5).trim();
-        }
-        if (!data) continue;
-        const payloadData = JSON.parse(data);
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop();
+    for (const part of parts) {
+      if (!part.trim()) continue;
+      let event = "message", data = "";
+      for (const line of part.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        else if (line.startsWith("data:")) data += line.slice(5).trim();
+      }
+      if (!data) continue;
+      const payloadData = JSON.parse(data);
 
-        if (event === "retrieval") {
-          renderSources(el, payloadData.sources || []);
-          meta = payloadData;
-          if (payloadData.warnings?.length) showWarnings(el, payloadData.warnings);
-        } else if (event === "token") {
-          text += payloadData.text || "";
-          answerBox.innerHTML = render(text);
-        } else if (event === "done") {
-          const p = payloadData.provider || {};
-          el.querySelector(".meta-line").innerHTML =
-            `<span>${esc(p.provider_label || p.provider || "")}</span><span>${esc(p.model || "")}</span>` +
-            `<span>${esc(payloadData.mode === "mock" ? "离线模拟" : "大模型生成")}</span>` +
-            `<span>${payloadData.timings_ms?.total ?? "?"} ms</span>`;
-        } else if (event === "error") {
-          throw new Error(payloadData.message || "生成失败");
-        }
+      if (event === "retrieval") {
+        renderSources(el, payloadData.sources || []);
+        if (payloadData.warnings?.length) showWarnings(el, payloadData.warnings);
+      } else if (event === "token") {
+        text += payloadData.text || "";
+        answerBox.innerHTML = render(text);
+      } else if (event === "done") {
+        const p = payloadData.provider || {};
+        el.querySelector(".meta-line").innerHTML =
+          `<span>${esc(p.provider_label || p.provider || "")}</span><span>${esc(p.model || "")}</span>` +
+          `<span>${esc(payloadData.mode === "mock" ? "离线模拟" : "大模型生成")}</span>` +
+          `<span>${payloadData.timings_ms?.total ?? "?"} ms</span>`;
+      } else if (event === "error") {
+        throw new Error(payloadData.message || "生成失败");
       }
     }
-    if (!text) answerBox.innerHTML = `<p>（未返回内容）</p>`;
-  } catch (err) {
-    answerBox.innerHTML = `<p style="color:#b91c1c">请求失败：${esc(err.message)}</p>`;
-  } finally {
-    state.busy = false;
-    $("#send").disabled = false;
-    scrollBottom();
   }
+  if (!text) answerBox.innerHTML = `<p>（未返回内容）</p>`;
+}
+
+async function sendAgent(question, el) {
+  const answerBox = el.querySelector(".answer");
+  answerBox.innerHTML = `<p class="doc-meta">Agent 正在规划工具…</p>`;
+
+  const res = await fetch("/api/agent/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: question, thread_id: state.threadId }),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  state.threadId = data.thread_id;
+
+  answerBox.innerHTML = render(data.answer || "（未返回内容）");
+  renderSources(el, data.sources || []);
+
+  const calls = data.tool_calls || [];
+  const tools = calls.map((c) => `${c.name}${c.ok === false ? "✗" : ""}`).join(" → ");
+  el.querySelector(".meta-line").innerHTML =
+    `<span>Agent</span><span>${esc(tools || "无工具")}</span>` +
+    `<span>${((data.elapsed_ms || 0) / 1000).toFixed(1)} s</span>`;
+
+  const failed = calls.filter((c) => c.ok === false);
+  if (failed.length) showWarnings(el, failed.map((c) => `${c.name}：${c.summary || "未完成"}`));
 }
 
 function showWarnings(el, warnings) {
@@ -546,6 +582,11 @@ $("#input").addEventListener("input", (e) => {
 
 $("#topk").addEventListener("input", (e) => ($("#topk-val").textContent = e.target.value));
 $("#provider").addEventListener("change", updateModels);
+$("#mode").addEventListener("change", (e) => {
+  $("#mode-hint").textContent = e.target.value === "agent"
+    ? "Agent 忽略供应商 / top_k；建待办时用 LLM 汇总，纯检索返回片段"
+    : "普通 RAG 按下方供应商 / top_k 检索并流式生成";
+});
 
 $("#btn-ingest").addEventListener("click", async () => {
   const btn = $("#btn-ingest");
