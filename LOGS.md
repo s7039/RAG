@@ -19,3 +19,14 @@
 - 2026-11-18 18:56 — `python scripts/migrate_to_pg.py` — 成功 — documents 4 / chunks 58（王五 16、张三九 8、李四六 7、无患者 27）
 - 2026-11-18 18:57 — `python -m pytest` — 成功 — 32 passed in 4.65s
 - 2026-11-18 18:57 — `npx newman run docs/postman/...` — 成功 — 8/0 requests、4/0 assertions，平均 37ms
+- 2026-11-18 19:50 — 硅基流动连通性检查 — 成功 — `/models` 200；Qwen/Qwen3-Embedding-8B dim 4096；DeepSeek-V4.1-Flash 回复「可用」
+- 2026-11-18 19:54 — `python -m evals.runner --online` — 失败 — tool 0.957 / Top-1 9/15 / 拒答 2/3（LLM 计划无上下文、改写检索词、漏工具）
+- 2026-11-18 19:58 — `python -m evals.runner --online` — 成功 — 25/25、Top-1 15/15、拒答 3/3、P95 15.9s
+- 2026-11-18 20:02 — `npx newman run ...` — 失败 — `/api/query` 4285ms，响应 < 3000ms 断言失败（真实模型）
+- 2026-11-18 20:04 — `npx newman run ...` — 失败 — query 改 mock 后仍 8776ms（Qwen embedding 波动）
+- 2026-11-18 20:05 — `npx newman run ...` — 成功 — query 走 mock、阈值 15000ms；8/0 requests、4/0 assertions
+- 2026-11-18 20:06 — `python scripts/ingest.py` — 成功 — Qwen/Qwen3-Embedding-8B，58 chunk，向量化 5.9s
+- 2026-11-18 20:09 — `python -m evals.runner --out report.json` — 成功 — 25/25、Top-1 15/15、拒答 3/3、P95 5.7s
+- 2026-11-18 20:10 — `python -m evals.runner --online --out report.online.json` — 成功 — 25/25、Top-1 15/15、拒答 3/3、P95 15.9s
+- 2026-11-18 20:11 — `npx newman run ...` — 成功 — 8/0 requests、4/0 assertions，平均 1.4s
+- 2026-11-18 20:12 — `python -m pytest` — 成功 — 35 passed in 4.75s

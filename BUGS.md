@@ -16,3 +16,8 @@
 - 2026-11-18 18:56 — [新增] — 问句类型规则 rerank（数值题偏好数值+单位、建议题偏好医生建议章节）（app/rag/retriever.py, tests/test_service.py）— Top-1 13/15 → 15/15
 - 2026-11-18 18:57 — [修改] — 评测报告、README、项目上下文同步修复后指标；新增患者补丁与 rerank 测试（evals/REPORT.md, README.md, CONTEXT.md, tests/test_splitter.py, tests/test_service.py）— pytest 32 passed、评测 25/25
 - 2026-11-18 18:57 — [修改] — PostgreSQL chunk 患者标签随补丁同步（执行 scripts/migrate_to_pg.py）— 王五 16 / 张三九 8 / 李四六 7 / 无患者 27
+- 2026-11-18 20:00 — [修复] — LLM 规划器无对话上下文/改写检索词/漏 create_task/中文 due_at 直接入库（app/agent/graph.py, app/agent/tools.py）— 加计划校验与时间归一化；在线评测 25/25、Top-1 15/15、拒答 3/3
+- 2026-11-18 20:03 — [修复] — 测试 fixture 只清 OPENAI/DEEPSEEK，未清 CUSTOM_*，本机真实 Key 被 pytest 调用导致联网与断言失败（tests/test_api.py, tests/test_agent.py）— 显式清空 custom 并指定 mock；35 passed in 4.75s
+- 2026-11-18 20:05 — [修改] — Postman 的 /api/query 改为 provider=mock，响应时间断言 3000ms → 15000ms（远程 embedding 单次可达 5s）（docs/postman/rag-api.postman_collection.json, docs/postman/README.md）— newman 8/0、4/0
+- 2026-11-18 20:06 — [修复] — 擅自把 embedding 从 Qwen/Qwen3-Embedding-8B 换成 BAAI/bge-m3，按用户要求改回 Qwen（.env）— 以 Qwen 重灌 58 chunk 并重跑评测
+- 2026-11-18 20:12 — [修改] — 评测快照与文档更新为硅基流动结果（evals/report.json, evals/report.online.json, evals/REPORT.md, README.md, CONTEXT.md, .env.example）— 规则 P95 5.7s、LLM 规划 P95 15.9s

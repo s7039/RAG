@@ -32,6 +32,13 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("ALLOW_MOCK_LLM", "true")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "")
     monkeypatch.setenv("OPENAI_API_KEY", "")
+    # 本机可能配了 SiliconFlow/自定义供应商，测试必须把外部服务关掉
+    monkeypatch.setenv("CUSTOM_API_KEY", "")
+    monkeypatch.setenv("CUSTOM_BASE_URL", "")
+    monkeypatch.setenv("CUSTOM_CHAT_MODEL", "")
+    monkeypatch.setenv("CUSTOM_EMBEDDING_MODEL", "")
+    monkeypatch.setenv("DEFAULT_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEFAULT_MODEL", "")
 
     from app.config import get_settings
     from app.main import create_app

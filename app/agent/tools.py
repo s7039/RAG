@@ -118,19 +118,26 @@ def run_tool(name: str, args: dict, service) -> dict:
                 "summary": sources[0].get("content", "")[:120]}
 
     if name == "create_task":
+        due_at = parsed.due_at
+        if due_at:
+            try:
+                datetime.fromisoformat(due_at)
+            except ValueError:
+                # 模型可能把「明天下午三点」原样塞进来，统一转成 ISO8601 再入库
+                due_at = _parse_time(due_at)
         try:
             with SessionLocal() as db:
                 row = db.execute(
                     text("INSERT INTO tasks(title, due_at) VALUES (:t, :d) RETURNING id"),
-                    {"t": parsed.title, "d": parsed.due_at},
+                    {"t": parsed.title, "d": due_at},
                 ).scalar_one()
                 db.commit()
         except SQLAlchemyError as exc:
-            # 不把 DSN / 驱动细节抛给调用方
-            log.warning("写入 tasks 失败", exc_info=True)
+            # 不把 DSN / 驱动细节抛给调用方，也不打整段堆栈
+            log.warning("写入 tasks 失败：%s", exc.__class__.__name__)
             return {"name": name, "ok": False, "error": f"待办库不可用（{exc.__class__.__name__}）"}
         return {"name": name, "ok": True,
-                "summary": f"已创建待办 #{row}：{parsed.title}（{parsed.due_at or '无截止时间'}）"}
+                "summary": f"已创建待办 #{row}：{parsed.title}（{due_at or '无截止时间'}）"}
 
     if name == "parse_time":
         iso = _parse_time(parsed.text)
@@ -151,6 +158,10 @@ _ASK_RE = re.compile(r"(是多少|多少|查一下|帮我查|查查|怎么样|�
 
 def is_out_of_scope(text: str) -> bool:
     return bool(_OUT_OF_SCOPE_RE.search(text or ""))
+
+
+def is_reminder(text: str) -> bool:
+    return bool(_REMINDER_RE.search(text or ""))
 
 
 def known_patients(service) -> list[str]:

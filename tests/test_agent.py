@@ -33,6 +33,13 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("ALLOW_MOCK_LLM", "true")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "")
     monkeypatch.setenv("OPENAI_API_KEY", "")
+    # 本机可能配了 SiliconFlow/自定义供应商，测试必须把外部服务关掉
+    monkeypatch.setenv("CUSTOM_API_KEY", "")
+    monkeypatch.setenv("CUSTOM_BASE_URL", "")
+    monkeypatch.setenv("CUSTOM_CHAT_MODEL", "")
+    monkeypatch.setenv("CUSTOM_EMBEDDING_MODEL", "")
+    monkeypatch.setenv("DEFAULT_PROVIDER", "deepseek")
+    monkeypatch.setenv("DEFAULT_MODEL", "")
 
     from app.config import get_settings
     from app.main import create_app
@@ -94,6 +101,41 @@ def test_invalid_args_are_reported():
 
     res = run_tool("search_knowledge", {"query": "x", "top_k": 999}, service=None)
     assert res["ok"] is False and "参数不合法" in res["error"]
+
+
+def test_repair_plan_uses_current_patient_and_original_query():
+    from app.agent.graph import _repair_plan
+
+    calls = _repair_plan(
+        [{"name": "search_knowledge", "args": {"query": "血型", "patient": "她"}}],
+        "张三九的血型是什么？", "", ["张三九", "李四六"], "",
+    )
+    assert calls[0]["args"]["query"] == "张三九的血型是什么？"
+    assert calls[0]["args"]["patient"] == "张三九"
+
+
+def test_repair_plan_falls_back_for_incomplete_reminder():
+    from app.agent.graph import _repair_plan
+
+    calls = _repair_plan(
+        [
+            {"name": "search_knowledge", "args": {"query": "x"}},
+            {"name": "parse_time", "args": {"text": "明天下午三点"}},
+        ],
+        "明天下午三点提醒我复查", "", [], "",
+    )
+    assert [c["name"] for c in calls] == ["parse_time", "create_task"]
+
+
+def test_create_task_accepts_chinese_due_at():
+    if not pg_ready():
+        pytest.skip("PostgreSQL 不可用，跳过待办落库断言")
+
+    from app.agent.tools import run_tool
+
+    res = run_tool("create_task", {"title": "复查", "due_at": "明天下午三点"}, service=None)
+    assert res["ok"] is True
+    assert "T15:00:00" in res["summary"]
 
 
 def test_multi_turn_thread(client: TestClient):

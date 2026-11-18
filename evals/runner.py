@@ -140,6 +140,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="跑 Agent 评测集")
     parser.add_argument("--online", action="store_true", help="用真实 LLM 做规划")
     parser.add_argument("--fail-under", type=float, default=0.8, help="工具准确率下限")
+    parser.add_argument("--out", default="report.json", help="结果文件名（相对 evals/）")
     args = parser.parse_args(argv)
 
     cases = yaml.safe_load((BASE / "cases.yaml").read_text(encoding="utf-8"))
@@ -162,7 +163,10 @@ def main(argv: list[str] | None = None) -> int:
             rows.append(_qa_row(case, agent, service))
 
     summary = summarize(rows)
-    (BASE / "report.json").write_text(
+    out_path = Path(args.out)
+    if not out_path.is_absolute():
+        out_path = BASE / out_path
+    out_path.write_text(
         json.dumps({"summary": summary, "rows": rows}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

@@ -11,6 +11,7 @@ from langgraph.graph import END, START, StateGraph
 from app.agent.state import AgentState
 from app.agent.tools import (
     is_out_of_scope,
+    is_reminder,
     known_patients,
     plan_by_rules,
     resolve_patient,
@@ -30,14 +31,37 @@ def _last_text(state: AgentState) -> str:
     return m.get("content", "") if isinstance(m, dict) else getattr(m, "content", str(m))
 
 
-def _llm_plan(llm, text: str, last_error: str = "") -> list[dict] | None:
+def _history(state: AgentState) -> str:
+    """最近几轮对话（不含当前这句），给 LLM 规划器补上指代所需的上下文。"""
+    rows: list[str] = []
+    for m in (state["messages"][:-1] or [])[-4:]:
+        if isinstance(m, dict):
+            role, content = m.get("role", ""), m.get("content", "")
+        else:
+            role = getattr(m, "type", "")
+            content = getattr(m, "content", "")
+        role = {"user": "用户", "human": "用户", "assistant": "助手", "ai": "助手"}.get(role, "")
+        if role and content:
+            rows.append(f"{role}：{str(content)[:200]}")
+    return "\n".join(rows)
+
+
+def _llm_plan(
+    llm, text: str, last_error: str = "", patient: str = "", history: str = ""
+) -> list[dict] | None:
     """让模型产出工具调用；解析失败返回 None，交给规则兜底。"""
     if llm is None:
         return None
     try:
         prompt = (
             "你是工具规划器。可用工具：search_knowledge(query, top_k, patient)、"
-            "create_task(title, due_at)、parse_time(text)。"
+            "create_task(title, due_at)、parse_time(text)。\n"
+            f"当前会话患者：{patient or '未知'}\n"
+            f"最近对话：\n{history or '无'}\n"
+            "规则：\n"
+            "1. search_knowledge 的 query 必须原样使用用户当前这句话，不要改写或只写关键词；\n"
+            "2. 用户要求提醒/待办时，必须同时规划 parse_time 与 create_task；\n"
+            "3. 只问知识时只规划 search_knowledge；没有把握就输出 []。\n"
             "只输出 JSON 数组，元素形如 {\"name\": \"...\", \"args\": {...}}，不要解释。\n"
             f"用户输入：{text}\n上次错误：{last_error or '无'}"
         )
@@ -46,9 +70,38 @@ def _llm_plan(llm, text: str, last_error: str = "") -> list[dict] | None:
         calls = json.loads(raw[raw.find("["): raw.rfind("]") + 1])
         if isinstance(calls, list) and calls:
             return [c for c in calls if isinstance(c, dict) and c.get("name")]
-    except Exception:                      # noqa: BLE001 - 规划失败一律兜底
-        log.warning("LLM 规划失败，回退规则规划器", exc_info=True)
+    except Exception as exc:                      # noqa: BLE001 - 规划失败一律兜底
+        log.info("LLM 规划失败（%s），回退规则规划器", exc.__class__.__name__)
     return None
+
+
+def _repair_plan(
+    calls: list[dict], text: str, last_error: str, patients: list[str], last_patient: str
+) -> list[dict]:
+    """校验 LLM 计划：工具组合不对就交给规则；患者/检索词做纠正。"""
+    names = [c.get("name") for c in calls]
+    reminder = is_reminder(text)
+    if reminder:
+        # 提醒类必须 parse_time + create_task 齐全；漏了就交给规则，否则会漏建待办
+        if not {"parse_time", "create_task"} <= set(names):
+            return plan_by_rules(text, last_error, patients, last_patient)
+    elif names != ["search_knowledge"]:
+        # 非提醒类只允许检索；模型多规划了写工具就退回规则
+        return plan_by_rules(text, last_error, patients, last_patient)
+
+    repaired: list[dict] = []
+    resolved = resolve_patient(text, patients, last_patient)
+    for call in calls:
+        name = call["name"]
+        args = dict(call.get("args") or {})
+        if name == "search_knowledge":
+            args["query"] = text.strip()   # 不让模型改写检索词，保证评测可复现
+            llm_patient = args.get("patient")
+            # 优先用当前这句话/上一轮解析出的患者；再退回模型给的合法患者
+            patient = resolved or (llm_patient if llm_patient in patients else last_patient) or None
+            args["patient"] = patient
+        repaired.append({"name": name, "args": args})
+    return repaired
 
 
 def _cite(source: dict) -> str:
@@ -110,9 +163,11 @@ def build_graph(service, llm=None, checkpointer=None):
         last_error = state.get("last_error", "")
         last_patient = state.get("patient", "")
         names = patients()
-        calls = _llm_plan(llm, text, last_error) or plan_by_rules(
-            text, last_error, names, last_patient
-        )
+        calls = _llm_plan(llm, text, last_error, last_patient, _history(state))
+        if calls is None:
+            calls = plan_by_rules(text, last_error, names, last_patient)
+        else:
+            calls = _repair_plan(calls, text, last_error, names, last_patient)
         # 模型漏填患者时，用上一轮的患者补上，多轮追问才不会跑偏
         for call in calls:
             args = call.setdefault("args", {})
@@ -129,10 +184,15 @@ def build_graph(service, llm=None, checkpointer=None):
     def act(state: AgentState) -> dict:
         results: list[dict] = []
         carry: dict = {}
-        for call in state.get("plan") or []:
+        # 先跑 parse_time，保证 create_task 拿到的一定是 ISO 时间（LLM 计划顺序可能反过来）
+        plan = sorted(
+            state.get("plan") or [],
+            key=lambda c: 0 if c.get("name") == "parse_time" else 1,
+        )
+        for call in plan:
             args = dict(call.get("args") or {})
             # 工具结果在链路里流转：parse_time 的结果自动填进 create_task
-            if call.get("name") == "create_task" and not args.get("due_at") and carry.get("due_at"):
+            if call.get("name") == "create_task" and carry.get("due_at"):
                 args["due_at"] = carry["due_at"]
             res = run_tool(call.get("name", ""), args, service)
             if call.get("name") == "parse_time" and res.get("ok"):
