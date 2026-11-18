@@ -6,7 +6,8 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false        # .env 不入库；没有时用默认配置（离线模拟 + 本地向量）
     volumes:
       - rag_data:/app/data
     healthcheck:

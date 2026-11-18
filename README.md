@@ -174,11 +174,12 @@ python scripts/query.py -q "王五做过什么手术？" --no-stream
 ### 7. Docker 一键启动（可选）
 
 ```bash
-copy .env.example .env          # 首次运行，准备环境变量
 docker compose up -d --build
 curl -X POST http://127.0.0.1:8000/api/ingest -H "Content-Type: application/json" -d "{}"   # 首次灌库
 ```
 
+- 克隆下来直接跑即可：`.env` 可选（`env_file` 标了 `required: false`），没有时走离线模拟 + 本地向量
+- 要接真实模型：`copy .env.example .env` 填 Key，再 `docker compose up -d`
 - 健康检查：`curl http://127.0.0.1:8000/api/health`，`chunks` 应为 58
 - 索引落在卷 `rag_data`（挂到 `/app/data`），`docker compose down && docker compose up -d` 后仍在
 - 容器内以非 root 用户 `appuser` 运行；`.env` 用 `env_file` 注入，不打进镜像
