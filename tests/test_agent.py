@@ -109,3 +109,9 @@ def test_out_of_scope(client: TestClient):
     body = post(client, "今天杭州天气怎么样")
     assert body["tool_calls"] == []
     assert "没有查到" in body["answer"]
+
+
+def test_out_of_corpus_health_question_is_refused(client: TestClient):
+    # 患者存在、但知识库里没有 MRI：检索能返回片段，也不能硬答
+    body = post(client, "张三九的 MRI 报告在哪一页")
+    assert "没查到" in body["answer"]

@@ -20,18 +20,20 @@
 - Phase 3 LangGraph Agent：完成，tag `v0.2-agent`（5 个端到端场景）。
 - Phase 4 评测：完成，tag `v0.2.1-eval`（25 条；工具 23/23、Top-4 15/15、拒答 2/3）。
 - Phase 5 Postman：完成（8 请求、4 断言，newman 全绿）。
+- 回归修复（2026-11-18）：语料患者补丁、相关性拒答、规则 rerank；评测 25/25 完成、
+  Top-1 15/15、拒答 3/3；pytest 32 个用例。
 
 ## 下一步
 
-1. 修源 PDF 的患者归属（`健康档案(含表格01/02).pdf` 混入王五数据），重建索引。
-2. 给回答加相关性门槛，把拒答从 2/3 提到 3/3。
-3. 接真实 embedding / rerank，把 Top-1 从 13/15 提到 15/15。
+1. 接真实 embedding / reranker（`EMBED_PROVIDER=openai` 或本地 bge），替换规则 rerank 后再跑 25 条。
+2. 去重：同一事实在 3 份档案里重复，按「患者 + 章节 + 内容哈希」合并。
+3. 把无关的 `llama2.pdf` 移出 `input/`，重建索引后重跑评测。
 4. 会话记忆换 `PostgresSaver`；长期偏好写 `user_prefs`。
 
 ## 常用命令
 
 ```bash
-python -m pytest                                           # 27 个用例
+python -m pytest                                           # 32 个用例
 python scripts/ingest.py                                   # 灌库（58 chunk）
 docker compose up -d db                                    # PostgreSQL
 python scripts/migrate_to_pg.py                            # Chroma -> PG

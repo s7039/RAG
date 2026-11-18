@@ -64,6 +64,48 @@ def test_split_keeps_patient_and_section():
     assert "四、体检与化验结果" in sections
 
 
+def test_patient_override_for_known_corrupt_pdf():
+    """语料补丁：含表格02 全篇是王五的数据，即使姓名写成张三九也要标成王五。"""
+    meta = {
+        "source": "健康档案(含表格02).pdf",
+        "doc_title": "健康档案(含表格02)",
+        "doc_type": "pdf",
+    }
+    chunks = split_documents(
+        [Document(page_content=PAGE_1, metadata={**meta, "page": 1})],
+        chunk_size=600,
+        chunk_overlap=50,
+    )
+    assert chunks
+    assert {c.metadata["patient"] for c in chunks} == {"王五"}
+    assert all(c.page_content.startswith("【健康档案(含表格02) · 王五 · ") for c in chunks)
+
+
+def test_patient_override_is_section_scoped():
+    """含表格01 只有体检章节是王五的，基本信息仍然是张三九。"""
+    text = """一、基本信息
+张三九，男，出生于1985年5月20日，职业为IT工程师，血型O型。
+二、体检与化验结果
+| 项目 | 结果 |
+| --- | --- |
+| 身高 | 180厘米 |
+| 体重 | 85公斤 |
+"""
+    meta = {
+        "source": "健康档案(含表格01).pdf",
+        "doc_title": "健康档案(含表格01)",
+        "doc_type": "pdf",
+    }
+    chunks = split_documents(
+        [Document(page_content=text, metadata={**meta, "page": 1})],
+        chunk_size=600,
+        chunk_overlap=50,
+    )
+    by_section = {c.metadata["section"]: c.metadata["patient"] for c in chunks}
+    assert by_section["一、基本信息"] == "张三九"
+    assert by_section["二、体检与化验结果"] == "王五"
+
+
 def test_page_number_tracking():
     chunks = split_documents(make_docs(), chunk_size=600, chunk_overlap=50)
     zhang = [c for c in chunks if c.metadata["patient"] == "张三九"]

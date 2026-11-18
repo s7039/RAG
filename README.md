@@ -74,9 +74,10 @@ RAG/
 │  │  ├─ vectorstore.py       # ④ 向量数据库（Chroma）
 │  │  ├─ bm25.py              # 关键词检索
 │  │  ├─ tokenize.py          # 中文友好分词（中英混合）
-│  │  ├─ retriever.py         # 混合检索 + MMR 重排
+│  │  ├─ retriever.py         # 混合检索 + MMR 重排 + 轻量 rerank
 │  │  ├─ prompt.py            # Prompt 模板与上下文拼装
 │  │  ├─ llm.py               # 多模型接入 + 离线模拟模型
+│  │  ├─ patient_overrides.py # 语料补丁：修正表格 PDF 的患者归属
 │  │  ├─ providers.py         # 模型供应商注册表
 │  │  └─ pipeline.py          # 离线 / 在线流程编排（RagService）
 │  └─ web/index.html          # 内置聊天界面（无 CDN 依赖）
@@ -92,7 +93,7 @@ RAG/
 │  ├─ runner.py               # 跑评测，产出 report.json
 │  ├─ report.json             # 最近一次结果
 │  └─ REPORT.md               # 指标 + Bad Case 归因
-├─ tests/                     # pytest 测试（27 个用例，含 5 个 Agent 场景）
+├─ tests/                     # pytest 测试（32 个用例，含 6 个 Agent 场景）
 ├─ docs/postman/              # Postman 集合（8 请求 + 4 条断言）
 ├─ input/                     # 健康档案语料（PDF）
 ├─ data/chroma/               # 向量库落盘目录（可重建，已在 .gitignore）
@@ -338,7 +339,9 @@ score = HYBRID_ALPHA × 向量相似度 + (1 - HYBRID_ALPHA) × BM25 分数
 - `RETRIEVE_MODE=hybrid`（默认）：向量 + BM25 双路召回融合；
 - `RETRIEVE_MODE=vector`：纯向量检索；
 - `USE_MMR=true`：开启 MMR（最大边际相关性）重排，减少返回内容重复；
-- `patient=张三九`：按患者过滤，只在该患者的记录里检索。
+- `patient=张三九`：按患者过滤，只在该患者的记录里检索；
+- 轻量规则 rerank：数值题偏好「数值 + 临床单位/日期」的片段，建议题偏好「医生建议」章节。
+  这是规则加权，不是 cross-encoder；接真实 reranker 时替换 `_answer_type_bonus` 即可。
 
 实测（本地向量，无 API Key）：
 
@@ -389,6 +392,8 @@ graph TD;
 - **双规划器**：配置了真实 Key 时先让 LLM 输出 JSON 计划；没有 Key 或解析失败时回退规则规划器，
   断网也能跑通整条图。
 - **失败重规划**：只读工具失败 → `top_k` 放宽到 8 重跑一次；如果已经创建过待办则不再重跑，避免重复写。
+- **相关性门槛**：检索片段里一个实词都对不上问题（去掉患者名后）就判「库里没有」，
+  直接回「没查到」，不让无关片段硬答。
 - **多轮指代**：LangGraph `MemorySaver` 按 `thread_id` 保存 state，追问「那他的饮食建议呢」会沿用上一轮的患者。
 - **会话落库**：每轮问答写入 PostgreSQL 的 `sessions` / `messages`（`tool_calls` 存 JSONB），进程重启后仍可查。
 - **离线可测**：没有 API Key 时用离线模拟模型作答，5 个端到端场景（检索 / 建待办 / 多轮 / 参数错误 / 拒答）全过。
@@ -443,10 +448,10 @@ curl -X POST http://127.0.0.1:8000/api/agent/chat ^
 python -m pytest -v
 ```
 
-覆盖：切分与患者识别、表格保护、页码回溯、BM25 排序与过滤、端到端入库检索、
-HTTP 接口（含 SSE 流式）、空库提问，以及 Agent 的 5 个场景（检索 / 建待办 / 多轮指代 /
-参数校验 / 库外拒答）。全部用例使用本地向量 + 离线模拟模型，**不需要网络和 API Key**；
-建待办那条需要本地 `db` 容器，没起 PostgreSQL 时会 skip。
+覆盖：切分与患者识别、表格保护、页码回溯、语料患者补丁、BM25 排序与过滤、端到端入库检索、
+轻量 rerank、HTTP 接口（含 SSE 流式）、空库提问，以及 Agent 的 6 个场景（检索 / 建待办 /
+多轮指代 / 参数校验 / 库外拒答 / 库内无此项）。全部用例使用本地向量 + 离线模拟模型，
+**不需要网络和 API Key**；建待办那条需要本地 `db` 容器，没起 PostgreSQL 时会 skip。
 
 ---
 
@@ -458,15 +463,16 @@ HTTP 接口（含 SSE 流式）、空库提问，以及 Agent 的 5 个场景（
 
 | 指标 | 当前值 |
 | --- | --- |
-| 任务完成率（人工） | 23/25 |
+| 任务完成率（人工） | 25/25 |
 | 工具选择准确率 | 23/23 |
 | 参数正确率 | 25/25 |
-| Top-1 / Top-4 引用命中 | 13/15 · 15/15 |
-| 拒答正确率 | 2/3 |
-| P95 延迟 | 12.5 ms（离线检索 + 规则规划，不调 LLM） |
+| Top-1 / Top-4 引用命中 | 15/15 · 15/15 |
+| 拒答正确率 | 3/3 |
+| P95 延迟 | 12.3 ms（离线检索 + 规则规划，不调 LLM） |
 
-Bad Case 归因（r03 该拒答却硬答、s07 Top-1 排序错误、s01 语料自相矛盾）见
-[evals/REPORT.md](evals/REPORT.md)。CI 里会执行同一套用例，工具准确率低于 0.8 直接失败。
+修复前后的对比、3 个 Bad Case 的归因（r03 该拒答却硬答、s07/m01 Top-1 排序错误、
+s01 语料自相矛盾）和验证结果见 [evals/REPORT.md](evals/REPORT.md)。
+CI 里会执行同一套用例，工具准确率低于 0.8 直接失败。
 
 ---
 
@@ -500,9 +506,9 @@ A：`python run.py --port 8080`。
 
 ## 十二、可扩展方向
 
-- 接入真实 embedding / Rerank（如 bge-reranker），把评测 Top-1 从 13/15 提到 15/15
-- 修语料里的患者归属冲突（`健康档案(含表格01/02).pdf` 混入王五数据），见评测报告
-- 给 Agent 的回答加相关性门槛，补齐库外问题拒答
+- 接真实 embedding / reranker（`EMBED_PROVIDER=openai` 或本地 bge 模型），替换当前的规则 rerank
+- 去重：按「患者 + 章节 + 内容哈希」合并重复档案，减少 Top-1 抖动
+- 把与健康档案无关的 `llama2.pdf` 移出 `input/`（占 27/58 chunk），重建索引后重跑评测
 - 会话记忆升级：`PostgresSaver` 替代进程内 `MemorySaver`，长期偏好写 `user_prefs`
 - 文档增量更新（按文件哈希判断是否需要重新向量化）
 - 扫描件 OCR、结构化表格入库

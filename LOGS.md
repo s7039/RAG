@@ -14,3 +14,8 @@
 - 2026-11-18 18:48 — `docker compose build api` — 成功 — 镜像 `rag-api:dev` 构建通过（含 langgraph 1.2.22 / psycopg 3.3.9）
 - 2026-11-18 18:49 — `python -m pytest` — 成功 — 27 passed in 4.43s
 - 2026-11-18 18:49 — `python -m evals.runner` — 成功 — tool 1.0 / Top-4 15/15 / 拒答 2/3 / P95 12.5 ms；t04 due 11-20 15:00、t05 due 11-25 09:00
+- 2026-11-18 18:55 — `python scripts/ingest.py` — 成功 — 4 文件 / 15 页 / 58 chunk；含表格02 全部王五、含表格01 张三九+王五
+- 2026-11-18 18:56 — `python -m evals.runner` — 成功 — tool 1.0 / Top-1 15/15 / Top-4 15/15 / 拒答 3/3 / P95 12.3 ms / failed_cases []
+- 2026-11-18 18:56 — `python scripts/migrate_to_pg.py` — 成功 — documents 4 / chunks 58（王五 16、张三九 8、李四六 7、无患者 27）
+- 2026-11-18 18:57 — `python -m pytest` — 成功 — 32 passed in 4.65s
+- 2026-11-18 18:57 — `npx newman run docs/postman/...` — 成功 — 8/0 requests、4/0 assertions，平均 37ms

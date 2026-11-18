@@ -20,6 +20,8 @@ RECORD = """健康档案
 | --- | --- | --- | --- |
 | 空腹血糖 | 6.8毫摩尔/升 | 4.0-6.1毫摩尔/升 | 略高 |
 | 总胆固醇 | 5.2毫摩尔/升 | <5.2毫摩尔/升 | 正常 |
+四、医生建议
+建议张三九减少高糖、高脂肪食物的摄入，增加蔬菜和水果的摄入量。
 
 健康档案
 一、基本信息
@@ -75,6 +77,16 @@ def test_retrieve_hybrid_returns_patient_specific_chunk(service: RagService):
     assert result.strategy == "hybrid"
     assert result.chunks[0].patient == "李四六"
     assert "阿司匹林" in result.chunks[0].content
+
+
+def test_value_question_prefers_numeric_chunk(service: RagService):
+    result = service.retriever.retrieve("张三九的空腹血糖是多少", top_k=3)
+    assert "6.8" in result.chunks[0].content
+
+
+def test_advice_question_prefers_doctor_section(service: RagService):
+    result = service.retriever.retrieve("张三九的饮食建议是什么", top_k=3)
+    assert result.chunks[0].section == "四、医生建议"
 
 
 def test_retrieve_with_patient_filter(service: RagService):

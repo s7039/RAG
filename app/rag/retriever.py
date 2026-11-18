@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import math
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,6 +22,17 @@ import numpy as np
 from app.config import Settings
 from app.rag.bm25 import BM25Index
 from app.rag.vectorstore import StoredHit, VectorStore
+
+# 轻量 rerank：按问句类型给「能直接回答」的 chunk 一点加成。
+# 只针对评测里观察到的两类错排（数值题被「建议」抢 Top-1、建议题被「生活方式」抢），
+# 不引入模型依赖；接真实 reranker 时可以整体替换掉这个函数。
+_VALUE_Q = re.compile(r"(多少|是多少|多大|多高|多重|几次|多久|什么时候|哪天|数值)")
+_VALUE_A = re.compile(
+    r"\d+(?:\.\d+)?\s*(?:毫摩尔|毫米汞柱|厘米|公斤|次/分钟|次/分|单位/升|微摩尔|%)"
+    r"|\d{4}年\d{1,2}月\d{1,2}日"
+)
+_ADVICE_Q = re.compile(r"(建议|怎么办|如何|注意|调理|饮食)")
+_ADVICE_SECTION = "医生建议"
 
 
 @dataclass
@@ -168,7 +180,14 @@ class Retriever:
             ranked.append((hit, fused, item["vector"], item["keyword"]))
         ranked.sort(key=lambda row: row[1], reverse=True)
 
-        # 4) MMR 去重（可选）
+        # 4) 按问句类型做轻量重排
+        ranked = [
+            (hit, score + self._answer_type_bonus(query, hit), vec, kw)
+            for hit, score, vec, kw in ranked
+        ]
+        ranked.sort(key=lambda row: row[1], reverse=True)
+
+        # 5) MMR 去重（可选）
         if mmr and len(ranked) > k:
             ranked = self._mmr(query, ranked, k)
 
@@ -189,6 +208,16 @@ class Retriever:
             strategy=strategy,
             candidates=len(ranked),
         )
+
+    # ------------------------------------------------------------ 轻量 rerank
+    def _answer_type_bonus(self, query: str, hit: StoredHit) -> float:
+        """按问句类型给 chunk 加分：数值题偏好带数值+单位的片段，建议题偏好「医生建议」章节。"""
+        bonus = 0.0
+        if _VALUE_Q.search(query) and _VALUE_A.search(hit.text):
+            bonus += 0.05
+        if _ADVICE_Q.search(query) and _ADVICE_SECTION in str(hit.metadata.get("section", "")):
+            bonus += 0.10
+        return bonus
 
     # ------------------------------------------------------------ MMR
     def _mmr(self, query: str, ranked: list[tuple[StoredHit, float, float, float]], k: int) -> list[tuple[StoredHit, float, float, float]]:

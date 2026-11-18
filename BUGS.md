@@ -11,3 +11,8 @@
 - 2026-11-18 18:49 — [修复] — `parse_time` 不识别「下周」，t05 的待办落到当天 09:00；t04 用例没有明确日期（app/agent/tools.py, evals/cases.yaml）— t04 落到 11-20 15:00、t05 落到 11-25 09:00；pytest 27 passed、评测退出码 0
 - 2026-11-18 18:49 — [修改] — 用重新评测后的快照更新延迟指标（evals/report.json, evals/REPORT.md, README.md）— P95 12.5 ms / 平均 39.3 ms（去首条 8.1 ms）
 - 2026-11-18 18:49 — [修复] — Markdown 被 PowerShell 写入 UTF-8 BOM，`#` 前多出不可见字符（README.md, evals/REPORT.md）— 两个文件已改回无 BOM
+- 2026-11-18 18:55 — [修复] — 表格 PDF 的患者归属错误（app/rag/patient_overrides.py, app/rag/splitter.py）— 重建后 含表格02 全部为王五、含表格01 为张三九+王五；s01 只剩青霉素
+- 2026-11-18 18:56 — [新增] — 检索相关性门槛：问题实词与 Top-4 片段无交集时明确拒答（app/agent/tools.py, tests/test_agent.py）— r03 输出「没查到」；拒答 2/3 → 3/3
+- 2026-11-18 18:56 — [新增] — 问句类型规则 rerank（数值题偏好数值+单位、建议题偏好医生建议章节）（app/rag/retriever.py, tests/test_service.py）— Top-1 13/15 → 15/15
+- 2026-11-18 18:57 — [修改] — 评测报告、README、项目上下文同步修复后指标；新增患者补丁与 rerank 测试（evals/REPORT.md, README.md, CONTEXT.md, tests/test_splitter.py, tests/test_service.py）— pytest 32 passed、评测 25/25
+- 2026-11-18 18:57 — [修改] — PostgreSQL chunk 患者标签随补丁同步（执行 scripts/migrate_to_pg.py）— 王五 16 / 张三九 8 / 李四六 7 / 无患者 27

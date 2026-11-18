@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.db import SessionLocal
+from app.rag.tokenize import tokenize
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +36,25 @@ TOOL_SPECS = {
     "create_task": CreateTaskArgs,
     "parse_time": ParseTimeArgs,
 }
+
+# 问句里的功能词/客套词，不能拿来判断「知识库里有没有」
+_QUESTION_STOP = {
+    "什么", "怎么", "么样", "多少", "哪一", "一页", "在哪", "他的", "她的",
+    "那是", "是什", "如何", "是否", "可以", "告诉", "一下", "这个", "那个",
+    "我们", "你们", "请问", "帮我",
+}
+
+
+def is_relevant(query: str, patient: str, sources: list[dict]) -> bool:
+    """检索片段里至少出现一个问题的实词（二字词或英文词），否则视为库里没有。"""
+    text = query.replace(patient, " ") if patient else query
+    terms = {t for t in tokenize(text) if len(t) >= 2 and t not in _QUESTION_STOP}
+    if not terms:
+        return True
+    matched: set[str] = set()
+    for source in sources:
+        matched.update(tokenize(source.get("content", "")))
+    return bool(terms & matched)
 
 
 _CN_HOURS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6,
@@ -91,6 +111,9 @@ def run_tool(name: str, args: dict, service) -> dict:
         sources = [c.to_dict() for c in retrieval.chunks]
         if not sources:
             return {"name": name, "ok": False, "error": "检索无结果，可能需要换关键词或放宽条件"}
+        if not is_relevant(parsed.query, parsed.patient or "", sources):
+            return {"name": name, "ok": False,
+                    "error": "检索结果与问题不相关，知识库里可能没有这条信息"}
         return {"name": name, "ok": True, "sources": sources,
                 "summary": sources[0].get("content", "")[:120]}
 

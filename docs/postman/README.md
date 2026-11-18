@@ -29,4 +29,4 @@ npx newman run docs/postman/rag-api.postman_collection.json ^
 ```
 
 最近一次结果（2026-11-18，离线模式，58 chunk）：`requests 8 / failed 0`，
-`assertions 4 / failed 0`，平均响应 32ms（max 173ms，SSE 那条）。
+`assertions 4 / failed 0`，平均响应 37ms（max 187ms，SSE 那条）。

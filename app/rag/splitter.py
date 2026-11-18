@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from app.rag.patient_overrides import resolve as resolve_patient_override
+
 # ---------------------------------------------------------------- 常量
 PAGE_SENTINEL_RE = re.compile(r"\x00P(\d+)\x00")
 PAGE_SENTINEL = "\x00P{page}\x00"
@@ -395,7 +397,9 @@ def split_documents(
                 min_size=min_chunk_size,
             )
 
-            patient = record_names.get(section.record_index, "")
+            patient = resolve_patient_override(
+                source, title, record_names.get(section.record_index, "")
+            )
             for rec in records:
                 body = rec.text.strip()
                 if not body:
