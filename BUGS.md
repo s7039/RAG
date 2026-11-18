@@ -8,3 +8,6 @@
 - 2026-11-18 18:45 — [新增] — Postman 集合与环境（8 请求、4 断言）及使用说明（docs/postman/*, README.md）— newman 8 请求 0 失败、4 断言通过
 - 2026-11-18 18:45 — [修复] — 集合里 url 只写 `raw` 时 newman 报 `request url is empty`（docs/postman/rag-api.postman_collection.json）— url 改为字符串后 8/8 通过
 - 2026-11-18 18:46 — [修改] — README 补 PostgreSQL / Agent / 评测 / Postman 章节与目录树；新增项目上下文与运行日志（README.md, CONTEXT.md, LOGS.md）— 文档中的命令均按记录可复现
+- 2026-11-18 18:49 — [修复] — `parse_time` 不识别「下周」，t05 的待办落到当天 09:00；t04 用例没有明确日期（app/agent/tools.py, evals/cases.yaml）— t04 落到 11-20 15:00、t05 落到 11-25 09:00；pytest 27 passed、评测退出码 0
+- 2026-11-18 18:49 — [修改] — 用重新评测后的快照更新延迟指标（evals/report.json, evals/REPORT.md, README.md）— P95 12.5 ms / 平均 39.3 ms（去首条 8.1 ms）
+- 2026-11-18 18:49 — [修复] — Markdown 被 PowerShell 写入 UTF-8 BOM，`#` 前多出不可见字符（README.md, evals/REPORT.md）— 两个文件已改回无 BOM

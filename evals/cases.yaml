@@ -166,7 +166,7 @@
 
 - id: t04
   kind: qa
-  question: 张三九的空腹血糖是多少？记得到时候提醒我复查
+  question: 张三九的空腹血糖是多少？记到后天下午三点提醒我复查
   expect_tools: [search_knowledge, parse_time, create_task]
   patient: 张三九
   difficulty: normal

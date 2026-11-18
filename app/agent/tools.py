@@ -55,6 +55,8 @@ def _parse_time(text: str) -> str:
         day = now + timedelta(days=2)
     elif "明天" in text:
         day = now + timedelta(days=1)
+    elif "下周" in text:
+        day = now + timedelta(days=7)
     hour = 9
     m = re.search(r"(上午|中午|下午|晚上)?\s*([一二三四五六七八九十\d]{1,3})\s*[点时]", text)
     if m:
