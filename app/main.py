@@ -18,8 +18,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.agent.graph import build_graph
+from app.api.agent_routes import router as agent_router
 from app.api.routes import router as api_router
 from app.config import BASE_DIR, get_settings
+from app.rag.llm import build_chat_model
 from app.rag.pipeline import RagService
 
 logger = logging.getLogger("rag")
@@ -42,6 +45,18 @@ async def lifespan(app: FastAPI):
     logger.info("正在初始化 RAG 服务…")
     service = RagService(settings)
     app.state.rag = service
+
+    # 只有配置了真实 Key 才让 Agent 走 LLM 规划；离线模拟模型只做回答，不做规划
+    try:
+        llm, llm_meta = build_chat_model(settings)
+        if llm_meta.get("mode") != "llm":
+            llm = None
+    except Exception:  # pragma: no cover - Key 配置异常时降级到规则规划器
+        logger.warning("构造规划用大模型失败，回退规则规划器", exc_info=True)
+        llm = None
+    app.state.agent = build_graph(service, llm=llm)
+    logger.info("Agent 已就绪（llm=%s）", "on" if llm else "off")
+
     logger.info(
         "初始化完成：向量库 %s 个 chunk，向量化 %s/%s，用时 %.2fs",
         service.store.count(),
@@ -77,6 +92,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(api_router, prefix=settings.api_prefix)
+    app.include_router(agent_router, prefix=settings.api_prefix)
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception):  # pragma: no cover
@@ -96,6 +112,7 @@ def create_app() -> FastAPI:
                 "POST /api/retrieve",
                 "POST /api/query",
                 "POST /api/query/stream",
+                "POST /api/agent/chat",
                 "GET  /api/documents",
                 "DELETE /api/index",
             ],

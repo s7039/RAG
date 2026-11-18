@@ -4,7 +4,8 @@
 
 基于 **LangChain + FastAPI + OpenAI / DeepSeek + Chroma** 的私有领域知识库（RAG）示例项目。
 以 `input/` 目录下的健康档案 PDF 为语料，完整跑通「离线建库 + 在线问答」全流程，
-并支持同时接入多种大模型、流式输出、引用溯源与患者级过滤。
+并支持同时接入多种大模型、流式输出、引用溯源与患者级过滤，以及 LangGraph Agent
+（检索 / 待办 / 时间解析三类工具、失败重规划、会话落 PostgreSQL）。
 
 
 ---
@@ -59,7 +60,13 @@ RAG/
 │  ├─ db.py                   # PostgreSQL 连接与会话
 │  ├─ api/
 │  │  ├─ routes.py            # 所有 HTTP 接口
+│  │  ├─ agent_routes.py      # Agent 接口（/agent/chat）
 │  │  └─ schemas.py           # 请求 / 响应模型
+│  ├─ agent/
+│  │  ├─ state.py             # 图状态（messages / plan / results / patient）
+│  │  ├─ tools.py             # 检索 / 待办 / 时间解析 + 规则规划器
+│  │  ├─ graph.py             # LangGraph 编排与重规划
+│  │  └─ memory.py            # 会话日志写 PostgreSQL
 │  ├─ rag/
 │  │  ├─ loader.py            # ① 文档加载（PDF/DOCX/TXT/MD/CSV）
 │  │  ├─ splitter.py          # ② 文档切分（结构 + 表格 + 患者）
@@ -76,10 +83,11 @@ RAG/
 ├─ scripts/
 │  ├─ ingest.py               # 命令行灌库
 │  ├─ migrate_to_pg.py        # Chroma chunk -> PostgreSQL
+│  ├─ export_graph.py         # 导出 LangGraph 流程图（Mermaid）
 │  └─ query.py                # 命令行问答
 ├─ db/
 │  └─ init.sql                # PostgreSQL 建表（documents/chunks/tasks/sessions/messages/user_prefs）
-├─ tests/                     # pytest 测试（21 个用例）
+├─ tests/                     # pytest 测试（27 个用例，含 5 个 Agent 场景）
 ├─ input/                     # 健康档案语料（PDF）
 ├─ data/chroma/               # 向量库落盘目录（可重建，已在 .gitignore）
 ├─ requirements.txt
@@ -224,6 +232,7 @@ docker compose exec db psql -U rag -d rag -c "EXPLAIN ANALYZE select * from chun
 | POST | `/api/retrieve` | 只检索，不生成（调参用） |
 | POST | `/api/query` | RAG 问答 |
 | POST | `/api/query/stream` | RAG 问答（SSE 流式） |
+| POST | `/api/agent/chat` | Agent 问答（工具调用 / 多轮 / 待办） |
 | GET | `/api/documents` | 已入库文档列表（患者、章节、页码） |
 | DELETE | `/api/index` | 清空向量库 |
 
@@ -324,7 +333,70 @@ score = HYBRID_ALPHA × 向量相似度 + (1 - HYBRID_ALPHA) × BM25 分数
 
 ---
 
-## 七、配置项速查
+## 七、Agent 与工具调用（LangGraph）
+
+`POST /api/agent/chat` 把「检索问答」升级成「按需调工具」：先判断意图，再规划工具链，
+执行后回看结果，失败就重规划一次。
+
+```mermaid
+graph TD;
+	__start__([__start__]):::first
+	route(route)
+	plan(plan)
+	act(act)
+	observe(observe)
+	final(final)
+	__end__([__end__]):::last
+	__start__ --> route;
+	act --> observe;
+	observe -.-> final;
+	observe -.-> plan;
+	plan --> act;
+	route -.-> final;
+	route -.-> plan;
+	final --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
+```
+
+| 工具 | 入参（pydantic 校验） | 作用 |
+| --- | --- | --- |
+| `search_knowledge` | `query`、`top_k`(1–10)、`patient` | 混合检索，返回带出处的片段 |
+| `create_task` | `title`、`due_at` | 往 PostgreSQL `tasks` 写待办 |
+| `parse_time` | `text` | 把「明天下午三点」解析成 ISO8601 |
+
+要点：
+
+- **双规划器**：配置了真实 Key 时先让 LLM 输出 JSON 计划；没有 Key 或解析失败时回退规则规划器，
+  断网也能跑通整条图。
+- **失败重规划**：只读工具失败 → `top_k` 放宽到 8 重跑一次；如果已经创建过待办则不再重跑，避免重复写。
+- **多轮指代**：LangGraph `MemorySaver` 按 `thread_id` 保存 state，追问「那他的饮食建议呢」会沿用上一轮的患者。
+- **会话落库**：每轮问答写入 PostgreSQL 的 `sessions` / `messages`（`tool_calls` 存 JSONB），进程重启后仍可查。
+- **离线可测**：没有 API Key 时用离线模拟模型作答，5 个端到端场景（检索 / 建待办 / 多轮 / 参数错误 / 拒答）全过。
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/agent/chat ^
+  -H "Content-Type: application/json" ^
+  -d "{\"message\":\"明天下午三点提醒我复查血糖\"}"
+```
+
+```json
+{
+  "thread_id": "…",
+  "answer": "· 已创建待办 #6：复查血糖（2026-11-19T15:00:00）",
+  "tool_calls": [
+    {"name": "parse_time", "args": {"text": "明天下午三点提醒我复查血糖"}},
+    {"name": "create_task", "args": {"title": "复查血糖"}}
+  ]
+}
+```
+
+流程图重新生成：`python scripts/export_graph.py`。
+
+---
+
+## 八、配置项速查
 
 | 配置 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -341,23 +413,26 @@ score = HYBRID_ALPHA × 向量相似度 + (1 - HYBRID_ALPHA) × BM25 分数
 | `DEFAULT_PROVIDER` | `deepseek` | 默认供应商 |
 | `EMBED_PROVIDER` | `auto` | `auto` / `openai` / `local` |
 | `ALLOW_MOCK_LLM` | `true` | 无 Key 时是否允许离线模拟 |
+| `POSTGRES_DSN` | `postgresql+psycopg://rag:rag@localhost:5432/rag` | PostgreSQL 连接串（容器内由 compose 覆盖为 `@db`） |
 
 完整列表见 `app/config.py` 与 `.env.example`。
 
 ---
 
-## 八、测试
+## 九、测试
 
 ```bash
 python -m pytest -v
 ```
 
 覆盖：切分与患者识别、表格保护、页码回溯、BM25 排序与过滤、端到端入库检索、
-HTTP 接口（含 SSE 流式）、空库提问等。全部用例使用本地向量 + 离线模拟模型，**不需要网络和 API Key**。
+HTTP 接口（含 SSE 流式）、空库提问，以及 Agent 的 5 个场景（检索 / 建待办 / 多轮指代 /
+参数校验 / 库外拒答）。全部用例使用本地向量 + 离线模拟模型，**不需要网络和 API Key**；
+建待办那条需要本地 `db` 容器，没起 PostgreSQL 时会 skip。
 
 ---
 
-## 九、常见问题
+## 十、常见问题
 
 **Q：没有 API Key 时界面显示「离线模拟模式」，回答是拼凑的？**
 A：是的。离线模拟模型只从检索结果中抽取最相关的句子，用来验证链路。
@@ -381,7 +456,7 @@ A：`python run.py --port 8080`。
 
 ---
 
-## 十、可扩展方向
+## 十一、可扩展方向
 
 - 接入 Rerank 模型（如 bge-reranker）做二次精排
 - 增加会话记忆，支持多轮追问
@@ -392,7 +467,7 @@ A：`python run.py --port 8080`。
 
 ---
 
-## 十一、参考
+## 十二、参考
 
 - LangChain：<https://python.langchain.com/>
 - FastAPI：<https://fastapi.tiangolo.com/>

@@ -19,6 +19,10 @@ langchain-core>=0.3
 langchain-text-splitters>=0.3
 langchain-openai>=0.2
 
+# --- agent (pinned: LangGraph changes its graph API between minor versions) ---
+langgraph==1.2.22
+langgraph-checkpoint-postgres==3.2.1
+
 # --- vector store ---
 chromadb>=0.5
 
