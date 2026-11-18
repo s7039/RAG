@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     custom_chat_model: str = ""
     custom_embedding_model: str = ""
 
+    # ---------- PostgreSQL ----------
+    postgres_dsn: str = "postgresql+psycopg://rag:rag@localhost:5432/rag"
+
     # ---------- 兜底 ----------
     default_provider: str = "deepseek"
     default_model: str = ""

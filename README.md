@@ -56,6 +56,7 @@ RAG/
 ├─ app/
 │  ├─ main.py                 # FastAPI 入口（lifespan 初始化服务、挂载静态页）
 │  ├─ config.py               # pydantic-settings 配置（读 .env / 环境变量）
+│  ├─ db.py                   # PostgreSQL 连接与会话
 │  ├─ api/
 │  │  ├─ routes.py            # 所有 HTTP 接口
 │  │  └─ schemas.py           # 请求 / 响应模型
@@ -74,7 +75,10 @@ RAG/
 │  └─ web/index.html          # 内置聊天界面（无 CDN 依赖）
 ├─ scripts/
 │  ├─ ingest.py               # 命令行灌库
+│  ├─ migrate_to_pg.py        # Chroma chunk -> PostgreSQL
 │  └─ query.py                # 命令行问答
+├─ db/
+│  └─ init.sql                # PostgreSQL 建表（documents/chunks/tasks/sessions/messages/user_prefs）
 ├─ tests/                     # pytest 测试（21 个用例）
 ├─ input/                     # 健康档案语料（PDF）
 ├─ data/chroma/               # 向量库落盘目录（可重建，已在 .gitignore）
@@ -183,6 +187,29 @@ curl -X POST http://127.0.0.1:8000/api/ingest -H "Content-Type: application/json
 - 健康检查：`curl http://127.0.0.1:8000/api/health`，`chunks` 应为 58
 - 索引落在卷 `rag_data`（挂到 `/app/data`），`docker compose down && docker compose up -d` 后仍在
 - 容器内以非 root 用户 `appuser` 运行；`.env` 用 `env_file` 注入，不打进镜像
+
+### 8. PostgreSQL（chunk 元数据 / 会话 / 待办）
+
+`docker compose up -d db` 会起 PostgreSQL 16，首次启动自动执行 `db/init.sql` 建表
+（`documents` / `chunks` / `tasks` / `sessions` / `messages` / `user_prefs`）。
+
+把 Chroma 里已有的 58 个 chunk 同步进去（幂等，可重跑）：
+
+```bash
+docker compose up -d db
+python scripts/migrate_to_pg.py
+```
+
+查询验证：
+
+```bash
+docker compose exec db psql -U rag -d rag -c "select count(*) from chunks;"
+docker compose exec db psql -U rag -d rag -c "EXPLAIN ANALYZE select * from chunks where patient='张三九';"
+```
+
+> 中文全文检索 PostgreSQL 不内置分词：`tsvec` 由 `app/rag/tokenize.py` 先切词，
+> 再 `to_tsvector('simple', ...)` 写入，`chunks_tsv_idx` 是 GIN 索引。
+> 58 行的小表上 PG 仍选择 `Bitmap Index Scan`（患者过滤命中 17 行），索引确实生效。
 
 ---
 
