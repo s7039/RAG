@@ -93,6 +93,7 @@ RAG/
 │  ├─ report.json             # 最近一次结果
 │  └─ REPORT.md               # 指标 + Bad Case 归因
 ├─ tests/                     # pytest 测试（27 个用例，含 5 个 Agent 场景）
+├─ docs/postman/              # Postman 集合（8 请求 + 4 条断言）
 ├─ input/                     # 健康档案语料（PDF）
 ├─ data/chroma/               # 向量库落盘目录（可重建，已在 .gitignore）
 ├─ requirements.txt
@@ -223,6 +224,18 @@ docker compose exec db psql -U rag -d rag -c "EXPLAIN ANALYZE select * from chun
 > 中文全文检索 PostgreSQL 不内置分词：`tsvec` 由 `app/rag/tokenize.py` 先切词，
 > 再 `to_tsvector('simple', ...)` 写入，`chunks_tsv_idx` 是 GIN 索引。
 > 58 行的小表上 PG 仍选择 `Bitmap Index Scan`（患者过滤命中 17 行），索引确实生效。
+
+### 9. Postman 集合（可选）
+
+`docs/postman/` 下有 8 个请求的集合与 `base_url` 环境，`/api/query` 带 4 条断言：
+
+```bash
+npx newman run docs/postman/rag-api.postman_collection.json ^
+  -e docs/postman/rag-api.postman_environment.json
+```
+
+也可以直接在 Postman 里 Import 两个 json 后跑 Collection Runner，详见
+[docs/postman/README.md](docs/postman/README.md)。
 
 ---
 

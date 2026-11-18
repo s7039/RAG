@@ -1,0 +1,10 @@
+# 维护记录
+
+- 2026-11-18 18:33 — [新增] — docker compose 增加 PostgreSQL 16 与 `rag_pg` 卷，新增建表脚本与连接层（docker-compose.yml, db/init.sql, app/db.py, app/config.py, .env.example）— `rag-db-1` healthy；documents 4 / chunks 58
+- 2026-11-18 18:35 — [新增] — Chroma → PostgreSQL 迁移脚本，中文分词后写 `tsvec`，建 GIN/患者索引（scripts/migrate_to_pg.py, requirements.txt）— 重跑幂等；EXPLAIN 为 Bitmap Index Scan
+- 2026-11-18 18:39 — [新增] — LangGraph Agent：状态、三类工具、规则规划器、图编排、会话日志、`/api/agent/chat`、main.py 接线、流程图脚本（app/agent/*, app/api/agent_routes.py, app/main.py, tests/test_agent.py, scripts/export_graph.py）— `pytest tests/test_agent.py` 5 passed；curl 返回 `create_task` 且 tasks 新增一行
+- 2026-11-18 18:40 — [修复] — 患者名单在图构建时缓存，灌库后仍为空，多轮追问丢失 patient（app/agent/graph.py）— 改为按 chunk 数失效；多轮用例通过
+- 2026-11-18 18:44 — [新增] — 25 条评测集、离线 runner、指标报告；CI 增加 PostgreSQL 服务、建表、灌库、评测步骤（evals/*, .github/workflows/ci.yml, requirements.txt）— 25 条跑通，tool 23/23、Top-4 15/15、拒答 2/3，退出码 0
+- 2026-11-18 18:45 — [新增] — Postman 集合与环境（8 请求、4 断言）及使用说明（docs/postman/*, README.md）— newman 8 请求 0 失败、4 断言通过
+- 2026-11-18 18:45 — [修复] — 集合里 url 只写 `raw` 时 newman 报 `request url is empty`（docs/postman/rag-api.postman_collection.json）— url 改为字符串后 8/8 通过
+- 2026-11-18 18:46 — [修改] — README 补 PostgreSQL / Agent / 评测 / Postman 章节与目录树；新增项目上下文与运行日志（README.md, CONTEXT.md, LOGS.md）— 文档中的命令均按记录可复现
