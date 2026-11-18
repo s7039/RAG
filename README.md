@@ -1,5 +1,7 @@
 # 健康档案私有知识库 RAG
 
+![ci](https://github.com/s7039/RAG/actions/workflows/ci.yml/badge.svg)
+
 基于 **LangChain + FastAPI + OpenAI / DeepSeek + Chroma** 的私有领域知识库（RAG）示例项目。
 以 `input/` 目录下的健康档案 PDF 为语料，完整跑通「离线建库 + 在线问答」全流程，
 并支持同时接入多种大模型、流式输出、引用溯源与患者级过滤。
